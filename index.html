@@ -228,11 +228,8 @@ function distBrg(lat1,lon1,lat2,lon2){
 }
 // Route per host: "direct" or index of a proxy that worked. Public proxies are a fallback;
 // a own Cloudflare Worker (setting "proxy") is tried first and is the reliable option.
-const PUBLIC_PROXIES = [
-  "https://api.allorigins.win/raw?url=",
-  "https://api.codetabs.com/v1/proxy/?quest=",
-  "https://corsproxy.io/?url="
-];
+// Public proxies tested 23/11/2026 from Safari: all timeout/401 -> not used anymore.
+const PUBLIC_PROXIES = [];
 const proxyList = () => [CFG.proxy, ...PUBLIC_PROXIES].filter((p,i,a)=>p && a.indexOf(p)===i);
 const hostRoute = {};
 const diagLog = {}; // host -> last result text
