@@ -11,3 +11,6 @@ Open `https://stefanmin13.github.io/flightwall-tv/?diag=1` (of druk **D**) om pe
 1. Maak een gratis account op dash.cloudflare.com → *Workers & Pages* → *Create* → *Hello World* worker.
 2. *Edit code* → plak de inhoud van `worker.js` → *Deploy*.
 3. Open de FlightWall, druk **S** en vul bij "Eigen proxy" in: `https://<jouw-worker>.workers.dev/?url=`
+
+## Tiegem
+Aparte pagina: https://stefanmin13.github.io/flightwall-tv/tiegem/ (eigen standaardlocatie, luchthavens LFQQ/EBOS/EBBR en eigen opgeslagen instellingen).

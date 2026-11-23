@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlightWall TV · Tiegem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Doto:wght@700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#050607; --panel:#0b0d10; --line:#1a1f26; --text:#f2ede2; --dim:#8a8f98; --faint:#4a5059;
+  --amber:#ffb238; --green:#46e08a; --red:#ff5a4e; --blue:#5aa8ff; --magenta:#e45cff;
+  --led:"Doto", "Space Mono", monospace; --mono:"Space Mono", ui-monospace, monospace;
+  font-size:1.55vh;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);overflow:hidden}
+body{transition:opacity 2s}
+body.night{opacity:.38}
+#wall{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr 31vh;gap:1.1rem;padding:1.4rem 1.8rem 1.6rem;transition:transform 4s ease}
+/* LED pixel-grid overlay */
+#wall::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:radial-gradient(circle at center, transparent 55%, rgba(0,0,0,.55) 100%);background-size:3px 3px;opacity:.55}
+.glow{text-shadow:0 0 .35rem rgba(255,190,90,.35)}
+
+/* header */
+header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:.9rem}
+.brand{font-family:var(--led);font-weight:900;font-size:2.6rem;letter-spacing:.12em;color:var(--amber)}
+.brand small{font-family:var(--mono);font-weight:400;font-size:1rem;letter-spacing:.08em;color:var(--dim);margin-left:1.2rem}
+.status{display:flex;align-items:center;gap:.6rem;font-size:1rem;color:var(--dim);letter-spacing:.1em}
+.dot{width:.8rem;height:.8rem;border-radius:50%;background:var(--green);box-shadow:0 0 .6rem var(--green);animation:pulse 2s infinite}
+.dot.demo{background:var(--amber);box-shadow:0 0 .6rem var(--amber)}
+.dot.err{background:var(--red);box-shadow:0 0 .6rem var(--red)}
+@keyframes pulse{50%{opacity:.35}}
+.clock{text-align:right;display:flex;align-items:baseline;gap:1.6rem}
+.clock .t{font-family:var(--led);font-weight:900;font-size:3rem;letter-spacing:.06em}
+.clock .u{font-size:1.15rem;color:var(--dim);line-height:1.4;text-align:right}
+#gear{background:none;border:1px solid var(--line);color:var(--faint);font:inherit;font-size:1.3rem;border-radius:.4rem;padding:.2rem .6rem;cursor:pointer;margin-left:1.2rem}
+#gear:focus,#gear:hover{color:var(--amber);border-color:var(--amber);outline:none}
+
+/* main */
+main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
+#flights{display:flex;flex-direction:column;gap:.8rem;min-height:0}
+.fl{flex:0 0 calc((100% - 3.2rem)/5);display:grid;grid-template-columns:5.6rem 1.15fr 1.25fr 1.35fr 6.5rem;align-items:center;gap:1.4rem;
+  background:var(--panel);border:1px solid var(--line);border-left:.35rem solid var(--faint);border-radius:.5rem;padding:0 1.4rem;min-height:0;overflow:hidden}
+.fl.climb{border-left-color:var(--green)} .fl.desc{border-left-color:var(--amber)} .fl.level{border-left-color:var(--blue)}
+@keyframes in{from{opacity:0;transform:translateX(-1rem)}}
+.logo{width:5.6rem;height:5.6rem;border-radius:.6rem;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.logo img{width:100%;height:100%;object-fit:contain}
+.logo.txt{background:#16202c;color:var(--amber);font-family:var(--led);font-weight:900;font-size:2rem}
+.id .air{font-size:1.05rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.04em}
+.id .no{font-family:var(--led);font-weight:900;font-size:3rem;line-height:1.05;letter-spacing:.05em}
+.id .ty{font-size:1.05rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt .codes{font-family:var(--led);font-weight:900;font-size:2.8rem;letter-spacing:.05em;white-space:nowrap}
+.rt .codes span{color:var(--amber);margin:0 .5rem;font-family:var(--mono);font-size:2rem}
+.rt .cities{font-size:1.05rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt .unk{font-family:var(--led);font-size:2rem;color:var(--faint)}
+.mx{display:grid;grid-template-columns:1fr 1fr;gap:.3rem 1.2rem}
+.mx div{display:flex;flex-direction:column}
+.mx b{font-size:.8rem;color:var(--faint);letter-spacing:.14em;font-weight:400}
+.mx i{font-style:normal;font-size:1.5rem;font-weight:700;white-space:nowrap}
+.up{color:var(--green)} .dn{color:var(--amber)}
+.ds{text-align:right}
+.ds .km{font-family:var(--led);font-weight:900;font-size:2.4rem}
+.ds .br{font-size:1.05rem;color:var(--dim)}
+.more{font-size:1.05rem;color:var(--dim);letter-spacing:.1em;text-align:center;padding:.2rem}
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;border:1px dashed var(--line);border-radius:.5rem}
+.empty .big{font-family:var(--led);font-weight:900;font-size:4rem;color:var(--amber)}
+.empty .sm{color:var(--dim);font-size:1.3rem}
+
+/* radar */
+#radarBox{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;position:relative;display:flex;flex-direction:column;min-height:0}
+#radarBox h3{font-size:.95rem;font-weight:400;color:var(--dim);letter-spacing:.16em;padding:.8rem 1rem 0}
+#radar{flex:1;width:100%;min-height:0}
+
+/* weather */
+#wx{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;min-height:0}
+.ap{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:1rem 1.2rem;display:grid;grid-template-rows:auto auto auto 1fr;gap:.55rem;min-height:0;overflow:hidden}
+.ap .hd{display:flex;align-items:center;gap:.9rem}
+.ap .icao{font-family:var(--led);font-weight:900;font-size:2.4rem;letter-spacing:.06em}
+.ap .nm{font-size:1rem;color:var(--dim);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cat{font-weight:700;font-size:1.1rem;padding:.15rem .7rem;border-radius:.3rem;color:#000;letter-spacing:.08em}
+.cat.VFR{background:var(--green)} .cat.MVFR{background:var(--blue)} .cat.IFR{background:var(--red)} .cat.LIFR{background:var(--magenta)} .cat.NA{background:var(--faint)}
+.ap .age{font-size:.95rem;color:var(--dim)}
+.ap .dec{display:grid;grid-template-columns:auto 1.45fr 1fr 1fr;gap:.4rem 1.2rem;align-items:center}
+.wind{grid-row:span 2;width:4.6rem;height:4.6rem}
+.ap .dec div{display:flex;flex-direction:column;min-width:0}
+.ap .dec b{font-size:.75rem;color:var(--faint);letter-spacing:.14em;font-weight:400}
+.ap .dec i{font-style:normal;font-size:1.2rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.raw{font-size:.95rem;color:var(--amber);line-height:1.35;word-break:break-word}
+.raw .lbl{color:var(--faint);margin-right:.5rem}
+.taf{position:relative;overflow:hidden;min-height:0;font-size:.9rem;color:#cfd3da;line-height:1.4;border-top:1px solid var(--line);padding-top:.45rem}
+.taf .in{white-space:pre-wrap}
+.taf .in.scroll{animation:tafs var(--dur,30s) linear infinite alternate}
+@keyframes tafs{0%,15%{transform:translateY(0)}85%,100%{transform:translateY(var(--shift))}}
+.taf .lbl{color:var(--faint)}
+
+/* idle weather screen */
+.idle{flex:1;display:grid;grid-template-columns:1fr 1.35fr;gap:1.6rem;min-height:0}
+.now{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:1.6rem 2rem;display:flex;flex-direction:column;justify-content:space-between;min-height:0}
+.now .top{display:flex;align-items:center;gap:1.6rem}
+.now .ico{width:11rem;height:11rem;flex:none}
+.now .tmp{font-family:var(--led);font-weight:900;font-size:8.5rem;line-height:.9;color:var(--amber)}
+.now .tmp small{font-size:3rem;vertical-align:top}
+.now .desc{font-size:1.7rem;font-weight:700;margin-top:.4rem}
+.now .feel{font-size:1.15rem;color:var(--dim)}
+.now .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem 1.4rem}
+.now .grid div{display:flex;flex-direction:column}
+.now .grid b{font-size:.8rem;color:var(--faint);letter-spacing:.14em;font-weight:400}
+.now .grid i{font-style:normal;font-size:1.45rem;font-weight:700;white-space:nowrap}
+.now .quiet{font-size:1.05rem;color:var(--dim);letter-spacing:.08em;border-top:1px solid var(--line);padding-top:.8rem}
+.fc{display:grid;grid-template-rows:auto 1fr;gap:1.2rem;min-height:0}
+.hours{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:1rem 1.2rem;display:grid;grid-template-columns:repeat(8,1fr);gap:.4rem;text-align:center}
+.hours .h b{display:block;font-size:.95rem;color:var(--dim);font-weight:400}
+.hours .h svg{width:3.6rem;height:3.6rem;margin:.3rem auto}
+.hours .h i{display:block;font-style:normal;font-size:1.5rem;font-weight:700}
+.hours .h em{display:block;font-style:normal;font-size:.95rem;color:var(--blue);min-height:1.2em}
+.days{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:.6rem 1.4rem;display:flex;flex-direction:column;justify-content:space-around;min-height:0}
+.day{display:grid;grid-template-columns:6.4rem 3.4rem 1.7fr 3.2rem 1fr 3.4rem 5.2rem;align-items:center;gap:1rem;font-size:1.35rem}
+.day .dn{font-weight:700;letter-spacing:.06em}
+.day svg{width:3rem;height:3rem}
+.day .lbl{color:var(--dim);font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day .lo{color:var(--blue);text-align:right} .day .hi{color:var(--amber)}
+.day .bar{height:.5rem;border-radius:.25rem;background:#1a1f26;position:relative}
+.day .bar span{position:absolute;top:0;bottom:0;border-radius:.25rem;background:linear-gradient(90deg,var(--blue),var(--amber))}
+.day .pp{color:var(--blue);font-size:1.05rem;text-align:right}
+/* settings */
+#set{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:none;align-items:center;justify-content:center}
+#set.on{display:flex}
+#set form{background:var(--panel);border:1px solid var(--amber);border-radius:.6rem;padding:2rem 2.4rem;display:grid;grid-template-columns:auto 22rem;gap:.9rem 1.4rem;align-items:center;font-size:1.2rem;max-width:95vw}
+#set h2{grid-column:1/-1;font-family:var(--led);font-weight:900;color:var(--amber);font-size:2rem;letter-spacing:.1em}
+#set label{color:var(--dim)}
+#set input{background:#000;border:1px solid var(--line);color:var(--text);font:inherit;padding:.4rem .6rem;border-radius:.3rem;width:100%}
+#set input:focus{border-color:var(--amber);outline:none}
+#set .row{grid-column:1/-1;display:flex;gap:1rem;justify-content:flex-end;margin-top:.6rem}
+#set button{font:inherit;padding:.5rem 1.4rem;border-radius:.3rem;border:1px solid var(--amber);background:none;color:var(--amber);cursor:pointer}
+#set button.pri{background:var(--amber);color:#000}
+#set .hint{grid-column:1/-1;font-size:.9rem;color:var(--faint)}
+
+/* portrait / small preview */
+@media (orientation:portrait){
+  :root{font-size:1.1vh}
+  #wall{grid-template-rows:auto auto auto;overflow:auto;position:static;height:auto}
+  html,body{overflow:auto}
+  main{grid-template-columns:1fr}
+  #flights{height:70vh}
+  #radarBox{height:40vh}
+  #wx{grid-template-columns:1fr;}
+  .ap{height:26vh}
+}
+</style>
+</head>
+<body>
+<div id="wall">
+  <header>
+    <div class="brand glow">FLIGHTWALL<small id="loc">TIEGEM · 25 KM</small></div>
+    <div class="status"><span class="dot" id="dot"></span><span id="stat">VERBINDEN…</span></div>
+    <div class="clock">
+      <div class="u"><div id="date"></div><div id="utc"></div></div>
+      <div class="t glow" id="time">--:--</div>
+      <button id="gear" title="Instellingen (toets S)">⚙</button>
+    </div>
+  </header>
+  <main>
+    <section id="flights"></section>
+    <section id="radarBox"><h3 id="radarTitle">RADAR</h3><canvas id="radar"></canvas></section>
+  </main>
+  <section id="wx"></section>
+</div>
+
+<div id="diag" style="display:none;position:fixed;inset:0;z-index:120;background:#050607;overflow:auto;padding:2rem;font-size:1.25rem;line-height:1.6"></div>
+<div id="set">
+  <form id="setForm">
+    <h2>INSTELLINGEN</h2>
+    <label for="s_name">Naam locatie</label><input id="s_name">
+    <label for="s_lat">Breedtegraad</label><input id="s_lat" inputmode="decimal">
+    <label for="s_lon">Lengtegraad</label><input id="s_lon" inputmode="decimal">
+    <label for="s_r">Straal (km)</label><input id="s_r" inputmode="numeric">
+    <label for="s_max">Max. vluchten</label><input id="s_max" inputmode="numeric">
+    <label for="s_minalt">Min. hoogte (ft)</label><input id="s_minalt" inputmode="numeric">
+    <label for="s_apts">Luchthavens (3× ICAO)</label><input id="s_apts">
+    <label for="s_dim">Nachtmodus (uur van–tot)</label><input id="s_dim" placeholder="23-7">
+    <label for="s_proxy">Eigen proxy (Worker-URL ?url=)</label><input id="s_proxy">
+    <label for="s_demo">Demo-modus (1/0)</label><input id="s_demo" inputmode="numeric">
+    <p class="hint">Opgeslagen in deze browser. Ook via URL: ?lat=51.12&amp;lon=3.67&amp;r=25&amp;apts=EBOS,EBBR,EBAW</p>
+    <div class="row"><button type="button" id="setCancel">Annuleren</button><button type="submit" class="pri">Opslaan</button></div>
+  </form>
+</div>
+
+<script>
+"use strict";
+/* ================= CONFIG ================= */
+const DEFAULTS = {
+  name: "Tiegem", lat: 50.8090, lon: 3.4748, r: 25, max: 5, minalt: 0,
+  apts: "LFQQ,EBOS,EBBR", dim: "23-7",
+  proxy: "https://winter-dust-31e0flightwall.stefan-e9d.workers.dev/?url=", demo: 0,
+  flightEvery: 10, wxEvery: 600
+};
+function loadCfg(){
+  let c = {...DEFAULTS};
+  try{ Object.assign(c, JSON.parse(localStorage.getItem("fwtv_tiegem") || "{}")); }catch(e){}
+  try{
+    const q = new URLSearchParams(location.search);
+    for (const k of Object.keys(DEFAULTS)) if (q.has(k)) c[k] = q.get(k);
+  }catch(e){}
+  if (!c.proxy) c.proxy = DEFAULTS.proxy;
+  ["lat","lon","r","max","minalt","demo","flightEvery","wxEvery"].forEach(k=>c[k]=Number(c[k]));
+  return c;
+}
+let CFG = loadCfg();
+const KM_PER_NM = 1.852;
+
+/* ================= REFERENCE DATA ================= */
+// ICAO airline prefix -> [name, IATA]
+const AIRLINES = {
+  BEL:["Brussels Airlines","SN"],JAF:["TUI fly Belgium","TB"],RYR:["Ryanair","FR"],RUK:["Ryanair UK","RK"],EZY:["easyJet","U2"],EJU:["easyJet Europe","EC"],EZS:["easyJet Switzerland","DS"],
+  KLM:["KLM","KL"],TRA:["Transavia","HV"],TVF:["Transavia France","TO"],AFR:["Air France","AF"],DLH:["Lufthansa","LH"],CLH:["Lufthansa CityLine","CL"],EWG:["Eurowings","EW"],
+  BAW:["British Airways","BA"],SHT:["British Airways","BA"],CFE:["BA CityFlyer","CJ"],VIR:["Virgin Atlantic","VS"],EXS:["Jet2","LS"],TOM:["TUI Airways","BY"],
+  WZZ:["Wizz Air","W6"],WUK:["Wizz Air UK","W9"],VLG:["Vueling","VY"],IBE:["Iberia","IB"],IBS:["Iberia Express","I2"],AEA:["Air Europa","UX"],TAP:["TAP Air Portugal","TP"],
+  SWR:["Swiss","LX"],AUA:["Austrian","OS"],SAS:["SAS","SK"],FIN:["Finnair","AY"],ICE:["Icelandair","FI"],NOZ:["Norwegian","DY"],NSZ:["Norwegian","D8"],LOT:["LOT","LO"],
+  CSA:["Czech Airlines","OK"],BTI:["airBaltic","BT"],ROT:["TAROM","RO"],AEE:["Aegean","A3"],THY:["Turkish Airlines","TK"],PGT:["Pegasus","PC"],SXS:["SunExpress","XQ"],
+  UAE:["Emirates","EK"],QTR:["Qatar Airways","QR"],ETD:["Etihad","EY"],ELY:["El Al","LY"],MSR:["EgyptAir","MS"],RAM:["Royal Air Maroc","AT"],ETH:["Ethiopian","ET"],
+  AAL:["American Airlines","AA"],UAL:["United","UA"],DAL:["Delta","DL"],ACA:["Air Canada","AC"],TSC:["Air Transat","TS"],CPA:["Cathay Pacific","CX"],SIA:["Singapore Airlines","SQ"],
+  LGL:["Luxair","LG"],CLX:["Cargolux","CV"],ABR:["ASL Airlines","AG"],BCS:["European Air Transport","QY"],DHK:["DHL Air","D0"],FDX:["FedEx","FX"],UPS:["UPS","5X"],
+  GEC:["Lufthansa Cargo","LH"],QTR_:["Qatar Cargo","QR"],AIC:["Air India","AI"],KQA:["Kenya Airways","KQ"],TUI:["TUI fly Deutschland","X3"],CND:["Corendon","XC"],
+  EIN:["Aer Lingus","EI"],EAI:["Emerald Airlines","EA"],LOG:["Loganair","LM"],BEE:["Flybe","BE"],NJE:["NetJets Europe","1I"],VJT:["VistaJet","VJ"],
+  BAF:["Belgische Luchtmacht",""],NAF:["Koninklijke Luchtmacht",""],RRR:["Royal Air Force",""],GAF:["Luftwaffe",""],NATO:["NATO",""]
+};
+const TYPES = {
+  A19N:"Airbus A319neo",A319:"Airbus A319",A320:"Airbus A320",A20N:"Airbus A320neo",A321:"Airbus A321",A21N:"Airbus A321neo",A318:"Airbus A318",
+  BCS1:"Airbus A220-100",BCS3:"Airbus A220-300",A332:"Airbus A330-200",A333:"Airbus A330-300",A339:"Airbus A330-900",A359:"Airbus A350-900",A35K:"Airbus A350-1000",A388:"Airbus A380",
+  A400:"Airbus A400M",B737:"Boeing 737-700",B738:"Boeing 737-800",B739:"Boeing 737-900",B38M:"Boeing 737 MAX 8",B39M:"Boeing 737 MAX 9",B744:"Boeing 747-400",B748:"Boeing 747-8",
+  B752:"Boeing 757-200",B763:"Boeing 767-300",B772:"Boeing 777-200",B77W:"Boeing 777-300ER",B77L:"Boeing 777F",B788:"Boeing 787-8",B789:"Boeing 787-9",B78X:"Boeing 787-10",
+  E170:"Embraer 170",E75L:"Embraer 175",E190:"Embraer 190",E195:"Embraer 195",E290:"Embraer E190-E2",E295:"Embraer E195-E2",CRJ9:"Bombardier CRJ900",CRJ7:"Bombardier CRJ700",
+  AT75:"ATR 72-500",AT76:"ATR 72-600",AT45:"ATR 42-500",DH8D:"Dash 8-400",SF34:"Saab 340",SB20:"Saab 2000",
+  C172:"Cessna 172",C152:"Cessna 152",C150:"Cessna 150",C182:"Cessna 182",C208:"Cessna Caravan",P28A:"Piper PA-28",P28R:"Piper Arrow",PA34:"Piper Seneca",DA40:"Diamond DA40",DA42:"Diamond DA42",
+  DR40:"Robin DR400",SR22:"Cirrus SR22",SR20:"Cirrus SR20",TB20:"Socata TB20",PC12:"Pilatus PC-12",PC24:"Pilatus PC-24",TBM9:"Daher TBM 900",TBM7:"Daher TBM 700",
+  BE20:"King Air 200",B350:"King Air 350",C25A:"Citation CJ2",C25B:"Citation CJ3",C25C:"Citation CJ4",C56X:"Citation Excel",C68A:"Citation Latitude",C510:"Citation Mustang",
+  E55P:"Phenom 300",E50P:"Phenom 100",CL35:"Challenger 350",CL60:"Challenger 600",GLF6:"Gulfstream G650",GLEX:"Global Express",F2TH:"Falcon 2000",FA7X:"Falcon 7X",LJ45:"Learjet 45",
+  EC35:"Airbus H135",EC45:"Airbus H145",H160:"Airbus H160",AS50:"Airbus H125",A139:"AW139",A109:"AW109",R44:"Robinson R44",R22:"Robinson R22",B06:"Bell 206",NH90:"NH90",
+  C130:"C-130 Hercules",C30J:"C-130J",K35R:"KC-135",A3ST:"Beluga",A337:"BelugaXL",MRTT:"A330 MRTT",F16:"F-16",F35:"F-35"
+};
+const DIRS = ["N","NNO","NO","ONO","O","OZO","ZO","ZZO","Z","ZZW","ZW","WZW","W","WNW","NW","NNW"];
+const card = d => DIRS[Math.round(((d%360)+360)%360/22.5)%16];
+
+/* ================= UTILITIES ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = n => Math.round(n).toLocaleString("nl-BE");
+function distBrg(lat1,lon1,lat2,lon2){
+  const R=6371, toR=Math.PI/180;
+  const dLat=(lat2-lat1)*toR, dLon=(lon2-lon1)*toR;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*toR)*Math.cos(lat2*toR)*Math.sin(dLon/2)**2;
+  const d=2*R*Math.asin(Math.sqrt(a));
+  const y=Math.sin(dLon)*Math.cos(lat2*toR), x=Math.cos(lat1*toR)*Math.sin(lat2*toR)-Math.sin(lat1*toR)*Math.cos(lat2*toR)*Math.cos(dLon);
+  return {km:d, brg:(Math.atan2(y,x)/toR+360)%360};
+}
+// Route per host: "direct" or index of a proxy that worked. Public proxies are a fallback;
+// a own Cloudflare Worker (setting "proxy") is tried first and is the reliable option.
+// Public proxies tested 23/11/2026 from Safari: all timeout/401 -> not used anymore.
+const PUBLIC_PROXIES = [];
+const proxyList = () => [CFG.proxy, ...PUBLIC_PROXIES].filter((p,i,a)=>p && a.indexOf(p)===i);
+const hostRoute = {};
+const diagLog = {}; // host -> last result text
+async function fetchT(url, opt={}, ms=9000){
+  const ctl = new AbortController(); const t = setTimeout(()=>ctl.abort(), ms);
+  try{ const r = await fetch(url, {...opt, signal:ctl.signal}); if(!r.ok) throw new Error("HTTP "+r.status); return r; }
+  catch(e){ throw new Error(e.name==="AbortError" ? "timeout" : (e.message||"geblokkeerd")); }
+  finally{ clearTimeout(t); }
+}
+async function getText(url){
+  const host = new URL(url).host;
+  const routes = ["direct", ...proxyList()];
+  const known = hostRoute[host];
+  if (known && routes.includes(known)) { routes.splice(routes.indexOf(known),1); routes.unshift(known); }
+  let lastErr;
+  for (const r of routes){
+    try{
+      const res = await fetchT(r==="direct" ? url : r + encodeURIComponent(url), {}, r==="direct" ? 7000 : 10000);
+      const txt = await res.text();
+      if (r!=="direct" && /^\s*</.test(txt)) throw new Error("proxy gaf HTML");
+      hostRoute[host] = r; diagLog[host] = "OK via " + (r==="direct" ? "direct" : new URL(r).host);
+      return txt;
+    }catch(e){ lastErr = e; }
+  }
+  diagLog[host] = "MISLUKT: " + (lastErr?.message || "?");
+  throw lastErr || new Error("geen route");
+}
+const getJSON = async url => JSON.parse(await getText(url));
+function store(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
+function recall(k){ try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;} }
+
+/* ================= FLIGHT DATA ================= */
+let aircraft = [];   // normalized
+let lastFetch = 0, mode = "live", failCount = 0;
+
+function normAdsbx(ac, now){
+  return ac.filter(a => a.lat!=null && a.lon!=null && (a.seen==null || a.seen<60)).map(a => ({
+    hex:a.hex, cs:(a.flight||"").trim(), reg:a.r||"", type:a.t||"", cat:a.category||"",
+    lat:a.lat, lon:a.lon, ground:a.alt_baro==="ground", alt:typeof a.alt_baro==="number"?a.alt_baro:(a.alt_geom||0),
+    gs:a.gs||0, trk:a.track ?? a.true_heading ?? 0, vs:a.baro_rate ?? a.geom_rate ?? 0, t0:now
+  }));
+}
+async function fetchFlights(){
+  const nm = Math.ceil(CFG.r / KM_PER_NM) + 2, now = Date.now();
+  if (CFG.demo){ aircraft = demoAircraft(); setMode("demo"); return; }
+  const sources = [
+    `https://api.adsb.lol/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`,
+    `https://opendata.adsb.fi/api/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`,
+    `https://api.airplanes.live/v2/point/${CFG.lat}/${CFG.lon}/${nm}`
+  ];
+  for (const u of sources){
+    try{
+      const j = await getJSON(u);
+      aircraft = normAdsbx(j.ac || j.aircraft || [], now);
+      failCount = 0; setMode("live", new URL(u).host.replace(/^(api|opendata)\./,""));
+      return;
+    }catch(e){}
+  }
+  // last resort: OpenSky anonymous
+  try{
+    const d = CFG.r/111 + .05, dl = d/Math.cos(CFG.lat*Math.PI/180);
+    const j = await getJSON(`https://opensky-network.org/api/states/all?lamin=${CFG.lat-d}&lomin=${CFG.lon-dl}&lamax=${CFG.lat+d}&lomax=${CFG.lon+dl}`);
+    aircraft = (j.states||[]).filter(s=>s[5]!=null).map(s=>({hex:s[0],cs:(s[1]||"").trim(),reg:"",type:"",cat:"",lat:s[6],lon:s[5],ground:s[8],
+      alt:(s[7]??s[13]??0)*3.28084,gs:(s[9]||0)*1.94384,trk:s[10]||0,vs:(s[11]||0)*196.85,t0:now}));
+    failCount = 0; setMode("live","opensky"); return;
+  }catch(e){}
+  failCount++;
+  if (failCount >= 2 || !aircraft.length){ aircraft = demoAircraft(); setMode("demo"); }
+  else setMode("err");
+}
+function setMode(m, src){
+  mode = m;
+  const dot=$("#dot"), st=$("#stat");
+  dot.className = "dot" + (m==="demo"?" demo":m==="err"?" err":"");
+  st.textContent = m==="live" ? `LIVE · ${src.toUpperCase()}` : m==="demo" ? (CFG.demo ? "DEMO-MODUS" : "DEMO-DATA · geen live verbinding · ?diag=1") : "VERBINDING ONDERBROKEN";
+}
+
+/* ---- routes (adsbdb + adsb.lol routeset), cached ---- */
+const routeCache = recall("fwtv_routes") || {};
+const pending = new Set();
+function cleanRoutes(){ const lim = Date.now()-12*3600e3; for(const k in routeCache) if(routeCache[k].ts<lim) delete routeCache[k]; }
+async function getRoute(a){
+  const cs = a.cs; if(!cs || pending.has(cs)) return;
+  if(routeCache[cs]) return;
+  if(mode==="demo") return;
+  pending.add(cs);
+  let r = null;
+  try{
+    const j = await getJSON(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(cs)}`);
+    const f = j?.response?.flightroute;
+    if (f) r = {
+      iata:f.callsign_iata||"", airline:f.airline?.name||"", aiata:f.airline?.iata||"",
+      o:{c:f.origin?.iata_code||f.origin?.icao_code, city:f.origin?.municipality||f.origin?.name||""},
+      d:{c:f.destination?.iata_code||f.destination?.icao_code, city:f.destination?.municipality||f.destination?.name||""}
+    };
+  }catch(e){}
+  if(!r){
+    try{
+      const res = await fetchT("https://api.adsb.lol/api/0/routeset",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({planes:[{callsign:cs,lat:a.lat,lng:a.lon}]})});
+      const x = (await res.json())[0];
+      if (x && x._airports && x._airports.length>=2 && x.plausible!==false){
+        const o=x._airports[0], d=x._airports[x._airports.length-1];
+        r = {iata:"",airline:"",aiata:"",o:{c:o.iata||o.icao,city:o.location||o.name||""},d:{c:d.iata||d.icao,city:d.location||d.name||""}};
+      }
+    }catch(e){}
+  }
+  routeCache[cs] = {ts:Date.now(), r};
+  pending.delete(cs); store("fwtv_routes", routeCache);
+}
+
+/* ================= RENDER FLIGHTS ================= */
+function enrich(a){
+  const pre = a.cs.slice(0,3).toUpperCase();
+  const al = AIRLINES[pre] && /^[A-Z]{3}\d/.test(a.cs) ? AIRLINES[pre] : null;
+  const rt = a.route || routeCache[a.cs]?.r || null;
+  const airline = rt?.airline || al?.[0] || (a.cat==="A7"?"Helikopter":a.cat==="A1"?"Algemene luchtvaart":"");
+  const aiata = rt?.aiata || al?.[1] || "";
+  let no = a.cs || a.reg || a.hex.toUpperCase();
+  if (rt?.iata) no = rt.iata;
+  else if (al && al[1] && /^[A-Z]{3}\d+[A-Z]?$/.test(a.cs)) no = al[1] + a.cs.slice(3);
+  return {airline, aiata, no, rt};
+}
+function logoHTML(aiata, a){
+  if (aiata && aiata.length===2) {
+    return `<div class="logo"><img alt="" src="https://pics.avs.io/200/200/${aiata}.png"
+      onerror="if(!this.dataset.k){this.dataset.k=1;this.src='https://images.kiwi.com/airlines/64/${aiata}.png'}else{const p=this.parentNode;p.className='logo txt';p.textContent='${aiata}'}"></div>`;
+  }
+  const sym = a.cat==="A7" ? "H" : (a.cs ? a.cs.slice(0,2) : "✈");
+  return `<div class="logo txt">${esc(sym)}</div>`;
+}
+let shownHex = new Set();
+function renderFlights(){
+  const now = Date.now();
+  let list = aircraft.map(a => ({...a, ...distBrg(CFG.lat,CFG.lon,a.lat,a.lon)}))
+    .filter(a => a.km <= CFG.r && !a.ground && a.alt >= CFG.minalt)
+    .sort((x,y) => x.km - y.km);
+  const total = list.length;
+  list = list.slice(0, CFG.max);
+  shownHex = new Set(list.map(a=>a.hex));
+  list.forEach(getRoute);
+  const box = $("#flights");
+  if (!total || forceIdle){
+    const html = idleHTML(total, aircraft.length);
+    if (html !== lastHTML){ box.innerHTML = html; lastHTML = html; }
+    return;
+  }
+  const html = list.map(a => {
+    const e = enrich(a);
+    const ph = a.vs > 300 ? "climb" : a.vs < -300 ? "desc" : "level";
+    const vsTxt = Math.abs(a.vs) < 100 ? "—" : `<span class="${a.vs>0?"up":"dn"}">${a.vs>0?"▲":"▼"} ${fmt(Math.abs(a.vs))}</span>`;
+    const typ = TYPES[a.type] || a.type || "";
+    const route = e.rt && e.rt.o.c && e.rt.d.c
+      ? `<div class="codes">${esc(e.rt.o.c)}<span>→</span>${esc(e.rt.d.c)}</div><div class="cities">${esc(e.rt.o.city)} → ${esc(e.rt.d.city)}</div>`
+      : `<div class="unk">${a.cat==="A7"?"HELIKOPTER":a.cat==="A1"||a.cat==="A2"?"VFR / GA":"ROUTE ONBEKEND"}</div><div class="cities">${esc(a.cs||"")}</div>`;
+    return `<div class="fl ${ph}">
+      ${logoHTML(e.aiata, a)}
+      <div class="id"><div class="air">${esc(e.airline||"—")}</div><div class="no glow">${esc(e.no)}</div>
+        <div class="ty">${esc(typ)}${a.reg?` · ${esc(a.reg)}`:""}</div></div>
+      <div class="rt">${route}</div>
+      <div class="mx">
+        <div><b>HOOGTE</b><i>${a.alt>=18000?"FL"+String(Math.round(a.alt/100)).padStart(3,"0"):fmt(a.alt)+" ft"}</i></div>
+        <div><b>SNELHEID</b><i>${fmt(a.gs)} kt</i></div>
+        <div><b>KOERS</b><i>${String(Math.round(a.trk)).padStart(3,"0")}° ${card(a.trk)}</i></div>
+        <div><b>V/S FPM</b><i>${vsTxt}</i></div>
+      </div>
+      <div class="ds"><div class="km glow">${a.km<10?a.km.toFixed(1):Math.round(a.km)}<span style="font-size:1.2rem"> km</span></div><div class="br">${card(a.brg)} · ${Math.round(a.brg)}°</div></div>
+    </div>`;
+  }).join("") + (total > CFG.max ? `<div class="more">+ ${total-CFG.max} ANDERE VLIEGTUIGEN BINNEN ${CFG.r} KM</div>` : "");
+  if (html !== lastHTML){ box.innerHTML = html; lastHTML = html; }
+}
+let lastHTML = "";
+
+/* ================= RADAR ================= */
+const cv = $("#radar"), cx = cv.getContext("2d");
+const MARKERS = [{n:"EBKT",lat:50.8172,lon:3.2047}]; // Ursel, Gent Sint-Denijs-Westrem (approx.)
+function drawRadar(){
+  const dpr = window.devicePixelRatio||1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w*dpr || cv.height !== h*dpr){ cv.width=w*dpr; cv.height=h*dpr; }
+  cx.setTransform(dpr,0,0,dpr,0,0); cx.clearRect(0,0,w,h);
+  const R = Math.min(w,h)/2 - 18, ox = w/2, oy = h/2, range = CFG.r * 1.15;
+  const fs = Math.max(13, R/12);
+  // rings
+  cx.strokeStyle="#1d242c"; cx.fillStyle="#4a5059"; cx.lineWidth=1; cx.font=`${fs*.8}px Space Mono`;
+  [1/3,2/3,1].forEach(f=>{ cx.beginPath(); cx.arc(ox,oy,R*f*CFG.r/range,0,7); cx.stroke();
+    cx.fillText(Math.round(CFG.r*f)+" km", ox+4, oy - R*f*CFG.r/range - 4); });
+  cx.beginPath(); cx.moveTo(ox-R,oy); cx.lineTo(ox+R,oy); cx.moveTo(ox,oy-R); cx.lineTo(ox,oy+R); cx.stroke();
+  cx.fillStyle="#8a8f98"; cx.font=`700 ${fs}px Space Mono`; cx.textAlign="center"; cx.fillText("N",ox,oy-R+fs*.2); cx.textAlign="left";
+  // sweep
+  const ang = (Date.now()/4000)%1*Math.PI*2 - Math.PI/2;
+  const g = cx.createConicGradient ? cx.createConicGradient(ang - .6, ox, oy) : null;
+  if (g){ g.addColorStop(0,"rgba(255,178,56,0)"); g.addColorStop(.095,"rgba(255,178,56,.10)"); g.addColorStop(.0955,"rgba(255,178,56,0)");
+    cx.fillStyle=g; cx.beginPath(); cx.arc(ox,oy,R,0,7); cx.fill(); }
+  const proj = (lat,lon) => { const k = R/range;
+    return [ox + (lon-CFG.lon)*111.32*Math.cos(CFG.lat*Math.PI/180)*k, oy - (lat-CFG.lat)*110.57*k]; };
+  // markers
+  cx.font=`${fs*.75}px Space Mono`;
+  MARKERS.forEach(m=>{ const [x,y]=proj(m.lat,m.lon); if(Math.hypot(x-ox,y-oy)>R) return;
+    cx.strokeStyle="#5aa8ff"; cx.strokeRect(x-4,y-4,8,8); cx.fillStyle="#5aa8ff"; cx.fillText(m.n,x+7,y+4); });
+  // home
+  cx.fillStyle="#ffb238"; cx.beginPath(); cx.arc(ox,oy,4,0,7); cx.fill();
+  // aircraft (dead-reckoned)
+  const now = Date.now();
+  aircraft.forEach(a=>{
+    if (a.ground) return;
+    const dt = Math.min((now - a.t0)/1000, 40), dkm = a.gs*KM_PER_NM*dt/3600, tr=a.trk*Math.PI/180;
+    const lat = a.lat + dkm*Math.cos(tr)/110.57, lon = a.lon + dkm*Math.sin(tr)/(111.32*Math.cos(a.lat*Math.PI/180));
+    const [x,y] = proj(lat,lon); if (Math.hypot(x-ox,y-oy) > R) return;
+    const hot = shownHex.has(a.hex), s = hot ? fs*.75 : fs*.55;
+    cx.save(); cx.translate(x,y); cx.rotate(tr);
+    cx.fillStyle = hot ? (a.vs>300?"#46e08a":a.vs<-300?"#ffb238":"#f2ede2") : "#5d636c";
+    cx.beginPath(); cx.moveTo(0,-s); cx.lineTo(s*.65,s*.8); cx.lineTo(0,s*.4); cx.lineTo(-s*.65,s*.8); cx.closePath(); cx.fill();
+    cx.restore();
+    if (hot){ cx.fillStyle="#f2ede2"; cx.font=`700 ${fs*.78}px Space Mono`; cx.fillText(a.cs||a.reg||a.hex, x+s+3, y-2);
+      cx.fillStyle="#8a8f98"; cx.font=`${fs*.68}px Space Mono`; cx.fillText(a.alt>=18000?"FL"+Math.round(a.alt/100):Math.round(a.alt/100)*100+"ft", x+s+3, y+fs*.75); }
+  });
+  requestAnimationFrame(drawRadar);
+}
+
+/* ================= METAR / TAF ================= */
+const WXD = {RA:"regen",DZ:"motregen",SN:"sneeuw",SG:"korrelsneeuw",PL:"ijsregen",GR:"hagel",GS:"kleine hagel",BR:"nevel",FG:"mist",HZ:"waas",FU:"rook",SQ:"rukwinden",UP:"neerslag",DU:"stof",SA:"zand"};
+const WXM = {SH:"buien ",TS:"onweer ",FZ:"onderkoelde ",MI:"ondiepe ",BC:"flarden ",PR:"gedeeltelijke ",BL:"opwaaiende ",DR:"lage driftende "};
+function parseMetar(raw){
+  const o = {raw, wind:null, gust:null, vrb:false, vis:null, cavok:false, wx:[], clouds:[], temp:null, dew:null, qnh:null, time:null};
+  const t = raw.replace(/=$/,"").split(/\s+/);
+  for (let i=0;i<t.length;i++){
+    const s = t[i];
+    if (/^(TEMPO|BECMG|NOSIG|RMK)$/.test(s)) break;
+    let m;
+    if ((m = s.match(/^(\d{2})(\d{2})(\d{2})Z$/))) o.time = {d:+m[1],h:+m[2],mi:+m[3]};
+    else if ((m = s.match(/^(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?(KT|MPS)$/))){ const f=m[4]==="MPS"?1.944:1;
+      o.vrb = m[1]==="VRB"; o.dir = o.vrb?null:+m[1]; o.wind=Math.round(+m[2]*f); o.gust=m[3]?Math.round(+m[3]*f):null; }
+    else if (/^\d{3}V\d{3}$/.test(s)) o.varb = s;
+    else if (s==="CAVOK"){ o.cavok=true; o.vis=10000; }
+    else if (/^\d{4}$/.test(s) && o.vis==null) o.vis = +s;
+    else if ((m = s.match(/^(\d+)SM$/))) o.vis = +m[1]*1609;
+    else if ((m = s.match(/^(FEW|SCT|BKN|OVC|VV)(\d{3}|\/\/\/)(CB|TCU)?$/))) o.clouds.push({c:m[1], b:m[2]==="///"?null:+m[2]*100, t:m[3]||""});
+    else if (/^(NSC|NCD|SKC|CLR)$/.test(s)) o.nsc = true;
+    else if ((m = s.match(/^(M?\d{2})\/(M?\d{2})?$/))){ o.temp=+m[1].replace("M","-"); o.dew=m[2]!=null?+m[2].replace("M","-"):null; }
+    else if ((m = s.match(/^Q(\d{4})$/))) o.qnh = +m[1];
+    else if ((m = s.match(/^A(\d{4})$/))) o.qnh = Math.round(+m[1]/100*33.8639);
+    else if ((m = s.match(/^(\+|-|VC)?(MI|BC|PR|DR|BL|SH|TS|FZ)?((?:DZ|RA|SN|SG|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|SQ)+)?$/)) && (m[2]||m[3]) && s.length>=2){
+      let txt = (m[1]==="-"?"lichte ":m[1]==="+"?"zware ":m[1]==="VC"?"in de buurt: ":"") + (WXM[m[2]]||"");
+      txt += (m[3]||"").match(/.{2}/g)?.map(c=>WXD[c]||c).join(" + ") || "";
+      o.wx.push(txt.trim());
+    }
+  }
+  const ceil = o.clouds.filter(c=>["BKN","OVC","VV"].includes(c.c) && c.b!=null).map(c=>c.b);
+  o.ceil = ceil.length ? Math.min(...ceil) : null;
+  const v = o.vis ?? 10000, c = o.ceil ?? 99999;
+  o.cat = (c<500||v<1600)?"LIFR":(c<1000||v<5000)?"IFR":(c<=3000||v<=8000)?"MVFR":"VFR";
+  if (o.vis==null && o.ceil==null && !o.cavok) o.cat = "NA";
+  return o;
+}
+function metarDate(o){
+  if (!o || !o.time) return null;
+  const n = new Date(); const d = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), o.time.d, o.time.h, o.time.mi));
+  if (d - n > 864e5) d.setUTCMonth(d.getUTCMonth()-1);
+  return d;
+}
+function metarAge(o){
+  if (!o.time) return "";
+  const n = new Date(), d = metarDate(o);
+  const min = Math.round((n-d)/60000);
+  return `${String(o.time.h).padStart(2,"0")}${String(o.time.mi).padStart(2,"0")}Z · ${min<1?"net":min+" min geleden"}`;
+}
+function windSVG(o){
+  const dir = o.dir, ok = dir!=null && o.wind>0;
+  return `<svg class="wind" viewBox="0 0 100 100">
+    <circle cx="50" cy="50" r="44" fill="none" stroke="#1d242c" stroke-width="3"/>
+    ${["N","O","Z","W"].map((l,i)=>`<text x="${50+36*Math.sin(i*Math.PI/2)}" y="${54-36*Math.cos(i*Math.PI/2)}" fill="#4a5059" font-size="11" text-anchor="middle" font-family="Space Mono">${l}</text>`).join("")}
+    ${ok?`<g transform="rotate(${dir} 50 50)"><line x1="50" y1="8" x2="50" y2="62" stroke="#ffb238" stroke-width="5" stroke-linecap="round"/><path d="M50 74 L40 56 L60 56 Z" fill="#ffb238"/></g>`
+        :`<text x="50" y="57" fill="#8a8f98" font-size="16" text-anchor="middle" font-family="Space Mono">${o.vrb?"VRB":"CALM"}</text>`}
+  </svg>`;
+}
+function fmtTaf(raw){
+  return esc(raw.replace(/\s+/g," ").replace(/=$/,"").replace(/^TAF\s+(AMD\s+|COR\s+)?/,"")).replace(/\s(?=(BECMG|TEMPO|FM\d{6}|PROB\d{2}))/g,"\n").replace(/\n(PROB\d{2})\n/g,"\n$1 ");
+}
+let wx = {};
+async function fetchWx(){
+  const ids = CFG.apts.toUpperCase().split(/[\s,;]+/).filter(Boolean).slice(0,3);
+  let ok = false;
+  if (!CFG.demo){
+    try{
+      const [m, t] = await Promise.all([
+        getJSON(`https://aviationweather.gov/api/data/metar?ids=${permIds(ids)}&format=json`),
+        getJSON(`https://aviationweather.gov/api/data/taf?ids=${permIds(ids)}&format=json`).catch(()=>[])
+      ]);
+      ids.forEach(id=>{
+        const mm = (m||[]).find(x=>x.icaoId===id), tt = (t||[]).find(x=>x.icaoId===id);
+        wx[id] = {name:(mm?.name||tt?.name||"").replace(/,.*$/,""), metar:mm?.rawOb||"", taf:tt?.rawTAF||"", demo:false};
+      });
+      ok = true;
+    }catch(e){}
+  }
+  if (!ok) ids.forEach(id => { if(!wx[id] || wx[id].demo) wx[id] = demoWx(id); });
+  scheduleWx(ids, ok);
+  renderWx(ids);
+}
+// Different station order = different URL, so the Worker cache (5 min) is bypassed on 2-min retries.
+function permIds(ids){
+  const P = [[0,1,2],[1,2,0],[2,0,1],[0,2,1],[2,1,0],[1,0,2]];
+  if (ids.length < 2) return ids.join(",");
+  const p = P[Math.floor(Date.now()/120000) % (ids.length===2 ? 2 : 6)];
+  return p.filter(i=>i<ids.length).map(i=>ids[i]).join(",");
+}
+// METARs in BE: every 30 min (~:20/:50), at aviationweather.gov ~5 min later.
+// Fetch at obs+36 min; if not yet in, retry every 2 min; a station late >18 min is treated as hourly.
+let wxTimer = null, wxNext = null;
+function scheduleWx(ids, ok){
+  clearTimeout(wxTimer);
+  const now = Date.now(), M = 60000;
+  let delay = 10*M;
+  if (ok){
+    const targets = ids.map(id => metarDate(wx[id]?.metar ? parseMetar(wx[id].metar) : null)).filter(Boolean).map(d => {
+      const obs = d.getTime();
+      if (now < obs + 48*M) return obs + 36*M;        // half-hourly expected
+      if (now < obs + 78*M) return obs + 66*M;        // maybe hourly
+      return null;                                     // station silent: normal 10-min cadence
+    }).filter(Boolean);
+    if (targets.length){
+      const t = Math.min(...targets);
+      delay = t <= now ? 2*M : Math.min(t - now, 10*M);
+    }
+  }
+  delay = Math.max(delay, 30000);
+  wxNext = new Date(now + delay);
+  wxTimer = setTimeout(fetchWx, delay);
+}
+function renderWx(ids){
+  $("#wx").innerHTML = ids.map(id=>{
+    const w = wx[id] || {metar:"",taf:""}, o = w.metar ? parseMetar(w.metar) : null;
+    const cl = o ? (o.cavok?"CAVOK":o.nsc&&!o.clouds.length?"Geen wolken":o.clouds.map(c=>`${c.c} ${c.b!=null?fmt(c.b):"?"}${c.t?" "+c.t:""}`).join(", ")||"—") : "—";
+    return `<div class="ap">
+      <div class="hd"><span class="icao glow">${esc(id)}</span><span class="nm">${esc(w.name||"")}</span><span class="cat ${o?o.cat:"NA"}">${o&&o.cat!=="NA"?o.cat:"N/B"}</span></div>
+      ${o?`<div class="dec">${windSVG(o)}
+        <div><b>WIND</b><i>${o.wind==null?"—":o.wind===0?"Windstil":`${o.vrb?"VRB":String(o.dir).padStart(3,"0")+"°"} ${o.wind}${o.gust?"G"+o.gust:""} kt`}</i></div>
+        <div><b>ZICHT</b><i>${o.vis==null?"—":o.vis>=9999?"≥ 10 km":o.vis>=5000?(o.vis/1000).toFixed(0)+" km":fmt(o.vis)+" m"}</i></div>
+        <div><b>QNH</b><i>${o.qnh??"—"} hPa</i></div>
+        <div><b>WOLKEN</b><i>${esc(cl)}</i></div>
+        <div><b>TEMP / DAUW</b><i>${o.temp??"—"}° / ${o.dew??"—"}°</i></div>
+        <div><b>WEER</b><i>${esc(o.wx.join(", ")||"—")}</i></div>
+      </div>
+      <div class="raw"><span class="lbl">METAR</span>${esc(w.metar)} <span class="lbl">· ${metarAge(o)}${wxNext?` · check ${wxNext.toLocaleTimeString("nl-BE",{hour:"2-digit",minute:"2-digit"})}`:""}</span></div>`
+      :`<div class="raw"><span class="lbl">METAR</span>niet beschikbaar</div><div></div>`}
+      <div class="taf"><div class="in"><span class="lbl">TAF </span>${w.taf?fmtTaf(w.taf):"niet beschikbaar"}</div></div>
+    </div>`;
+  }).join("");
+  // auto-scroll long TAFs
+  requestAnimationFrame(()=>document.querySelectorAll(".taf").forEach(b=>{
+    const inn=b.firstElementChild, over=inn.scrollHeight-b.clientHeight+8;
+    if (over>8){ inn.classList.add("scroll"); inn.style.setProperty("--shift",`-${over}px`); inn.style.setProperty("--dur",`${Math.max(12,over/6)}s`); }
+  }));
+}
+
+/* ================= DEMO DATA ================= */
+const DEMO = [
+  {hex:"44a8c1",cs:"BEL3QX",reg:"OO-SNA",type:"A320",o:["BRU","Brussel"],d:["LIS","Lissabon"],alt:24300,gs:418,trk:243,vs:1600,off:[-6,-4]},
+  {hex:"4ca7b4",cs:"RYR8KD",reg:"EI-DPC",type:"B738",o:["CRL","Charleroi"],d:["DUB","Dublin"],alt:33000,gs:446,trk:292,vs:0,off:[8,-14]},
+  {hex:"484f6d",cs:"KLM1723",reg:"PH-EXH",type:"E295",o:["AMS","Amsterdam"],d:["BOD","Bordeaux"],alt:36000,gs:471,trk:212,vs:0,off:[14,6]},
+  {hex:"44cf25",cs:"JAF3291",reg:"OO-JEF",type:"B38M",o:["BRU","Brussel"],d:["AGP","Málaga"],alt:15800,gs:352,trk:228,vs:2200,off:[-12,10]},
+  {hex:"406bc3",cs:"BAW397",reg:"G-EUYM",type:"A320",o:["LHR","Londen"],d:["BRU","Brussel"],alt:11200,gs:298,trk:104,vs:-1400,off:[-3,-18]},
+  {hex:"44d0a2",cs:"OOSKY",reg:"OO-SKY",type:"C172",o:null,d:null,alt:1800,gs:96,trk:75,vs:0,cat:"A1",off:[-2,-9]},
+  {hex:"3c6750",cs:"DLH2RT",reg:"D-AIUP",type:"A20N",o:["FRA","Frankfurt"],d:["LHR","Londen"],alt:38000,gs:489,trk:288,vs:0,off:[19,15]}
+];
+const demoStart = Date.now();
+function demoAircraft(){
+  const t = (Date.now()-demoStart)/1000, now = Date.now();
+  return DEMO.map((p,i)=>{
+    const kmps = p.gs*KM_PER_NM/3600, span = CFG.r*2.4, travel = ((t*kmps) + i*9) % span - span/2;
+    const tr = p.trk*Math.PI/180, x = p.off[0]*.5 + Math.sin(tr)*travel, y = p.off[1]*.5 + Math.cos(tr)*travel;
+    const lat = CFG.lat + y/110.57, lon = CFG.lon + x/(111.32*Math.cos(CFG.lat*Math.PI/180));
+    const al = AIRLINES[p.cs.slice(0,3)];
+    return {hex:p.hex,cs:p.cs,reg:p.reg,type:p.type,cat:p.cat||"A3",lat,lon,ground:false,alt:p.alt,gs:p.gs,trk:p.trk,vs:p.vs,t0:now,
+      route: p.o ? {iata: al ? al[1]+p.cs.slice(3) : "", airline:"", aiata:"", o:{c:p.o[0],city:p.o[1]}, d:{c:p.d[0],city:p.d[1]}} : null};
+  });
+}
+function demoWx(id){
+  const n = new Date(), dd = String(n.getUTCDate()).padStart(2,"0"), hh = String(n.getUTCHours()).padStart(2,"0");
+  const S = {
+    EBOS:["Oostende-Brugge","24016G27KT 9999 -SHRA FEW018CB BKN030 09/06 Q1009 TEMPO 4000 SHRA",`TAF EBOS ${dd}${hh}00Z ${dd}12/${String(+dd+1).padStart(2,"0")}12 24015G25KT 9999 SCT025 TEMPO ${dd}12/${dd}20 4000 SHRA BKN014 PROB30 TEMPO ${dd}14/${dd}18 TSRA FEW015CB BECMG ${dd}22/${String(+dd+1).padStart(2,"0")}01 22008KT`],
+    EBBR:["Brussels","22011KT 9999 SCT032 BKN045 10/05 Q1011 NOSIG",`TAF EBBR ${dd}${hh}00Z ${dd}12/${String(+dd+1).padStart(2,"0")}18 22012KT 9999 SCT030 BKN045 PROB30 TEMPO ${dd}15/${dd}20 6000 -SHRA BKN020 BECMG ${String(+dd+1).padStart(2,"0")}02/${String(+dd+1).padStart(2,"0")}05 4000 BR BKN008`],
+    EBAW:["Antwerp","23010KT 7000 BKN012 OVC020 09/07 Q1010",`TAF EBAW ${dd}${hh}00Z ${dd}12/${String(+dd+1).padStart(2,"0")}12 23010KT 7000 BKN012 BECMG ${dd}14/${dd}16 9999 SCT025`]
+  };
+  const s = S[id] || ["", "VRB03KT CAVOK 08/04 Q1012", ""];
+  return {name:s[0]+" (demo)", metar:`${id} ${dd}${hh}20Z ${s[1]}`, taf:s[2], demo:true};
+}
+
+/* ================= CLOCK, DIM, SHIFT ================= */
+function tick(){
+  const n = new Date();
+  $("#time").textContent = n.toLocaleTimeString("nl-BE",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  $("#date").textContent = n.toLocaleDateString("nl-BE",{weekday:"long",day:"numeric",month:"long"});
+  $("#utc").textContent = "UTC " + n.toISOString().slice(11,16) + "Z";
+  const m = String(CFG.dim||"").match(/^(\d{1,2})-(\d{1,2})$/);
+  if (m){ const h=n.getHours(), a=+m[1], b=+m[2]; document.body.classList.toggle("night", a>b ? (h>=a||h<b) : (h>=a&&h<b)); }
+}
+function shift(){ $("#wall").style.transform = `translate(${Math.round(Math.random()*8-4)}px,${Math.round(Math.random()*8-4)}px)`; }
+async function wake(){ try{ if(navigator.wakeLock) await navigator.wakeLock.request("screen"); }catch(e){} }
+
+/* ================= SETTINGS ================= */
+const F = ["name","lat","lon","r","max","minalt","apts","dim","proxy","demo"];
+function openSet(){ F.forEach(k=>$("#s_"+k).value = CFG[k]); $("#set").classList.add("on"); $("#s_name").focus(); }
+function closeSet(){ $("#set").classList.remove("on"); }
+$("#gear").onclick = openSet;
+$("#setCancel").onclick = closeSet;
+$("#setForm").onsubmit = e => {
+  e.preventDefault();
+  const c = {}; F.forEach(k=>c[k]=$("#s_"+k).value.trim());
+  store("fwtv_tiegem", c); CFG = loadCfg(); Object.assign(CFG, c); ["lat","lon","r","max","minalt","demo"].forEach(k=>CFG[k]=Number(CFG[k]));
+  closeSet(); applyCfg(); fetchFlights().then(renderFlights); fetchWx();
+};
+document.addEventListener("keydown", e => {
+  if ($("#set").classList.contains("on")){ if(e.key==="Escape") closeSet(); return; }
+  if (e.key==="Escape") $("#diag").style.display="none";
+  if (e.key==="d"||e.key==="D") runDiag();
+  if (e.key==="w"||e.key==="W"){ forceIdle = !forceIdle; lastHTML=""; renderFlights(); }
+  if (e.key==="s"||e.key==="S"||e.key==="ContextMenu") openSet();
+});
+function applyCfg(){
+  $("#loc").textContent = `${CFG.name.toUpperCase()} · ${CFG.r} KM`;
+  $("#radarTitle").textContent = `RADAR · ${CFG.r} KM · NOORD BOVEN`;
+}
+
+
+/* ================= WEERSCHERM (geen verkeer) ================= */
+let meteo = null, forceIdle = false;
+const WMO = c => c===0?["Helder","sun"]:c===1?["Overwegend helder","sun"]:c===2?["Half bewolkt","part"]:c===3?["Bewolkt","cloud"]:
+  c<=48?["Mist","fog"]:c<=55?["Motregen","drizzle"]:c<=57?["Ijzel (motregen)","drizzle"]:c<=65?[c===65?"Zware regen":c===63?"Regen":"Lichte regen","rain"]:
+  c<=67?["Ijzel","rain"]:c<=75?["Sneeuw","snow"]:c===77?["Sneeuwkorrels","snow"]:c<=82?[c===82?"Zware buien":"Regenbuien","shower"]:
+  c<=86?["Sneeuwbuien","snow"]:c===95?["Onweer","storm"]:["Onweer met hagel","storm"];
+function wIcon(code, day=1){
+  const k = WMO(code)[1];
+  const sun = `<circle cx="32" cy="30" r="11" fill="#ffb238"/>${[0,45,90,135,180,225,270,315].map(a=>`<line x1="32" y1="12" x2="32" y2="6" stroke="#ffb238" stroke-width="3.5" stroke-linecap="round" transform="rotate(${a} 32 30)"/>`).join("")}`;
+  const moon = `<path d="M38 14a16 16 0 1 0 12 26a13 13 0 0 1-12-26z" fill="#e6dcc0"/>`;
+  const cloud = (x=0,y=0,c="#cfd6df") => `<path transform="translate(${x} ${y})" d="M20 50h28a11 11 0 0 0 0-22a15 15 0 0 0-28 4a9 9 0 0 0 0 18z" fill="${c}"/>`;
+  const drops = (n,col="#5aa8ff") => Array.from({length:n},(_,i)=>`<line x1="${24+i*9}" y1="54" x2="${21+i*9}" y2="61" stroke="${col}" stroke-width="3" stroke-linecap="round"/>`).join("");
+  let g;
+  switch(k){
+    case "sun": g = day?sun:moon; break;
+    case "part": g = `<g transform="translate(-8 -6) scale(.85)">${day?sun:moon}</g>${cloud(4,4)}`; break;
+    case "cloud": g = cloud(-4,-8,"#8f98a3")+cloud(4,2); break;
+    case "fog": g = cloud(0,-8,"#8f98a3")+[48,54,60].map((y,i)=>`<line x1="${12+i*3}" y1="${y}" x2="${52-i*3}" y2="${y}" stroke="#8a8f98" stroke-width="3" stroke-linecap="round"/>`).join(""); break;
+    case "drizzle": g = cloud(0,-6)+drops(3,"#8cc4ff"); break;
+    case "rain": g = cloud(0,-6,"#8f98a3")+drops(4); break;
+    case "shower": g = `<g transform="translate(-8 -8) scale(.8)">${day?sun:moon}</g>`+cloud(4,-4)+drops(3); break;
+    case "snow": g = cloud(0,-6)+[22,32,42].map(x=>`<text x="${x}" y="63" fill="#fff" font-size="12" text-anchor="middle">✱</text>`).join(""); break;
+    case "storm": g = cloud(0,-6,"#6d7680")+`<path d="M34 46l-8 10h7l-4 9l11-13h-7l4-6z" fill="#ffd23f"/>`; break;
+  }
+  return `<svg viewBox="0 0 64 64">${g}</svg>`;
+}
+async function fetchMeteo(){
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${CFG.lat}&longitude=${CFG.lon}`+
+    `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,is_day,precipitation`+
+    `&hourly=temperature_2m,weather_code,precipitation_probability,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset`+
+    `&timezone=Europe%2FBrussels&forecast_days=6&wind_speed_unit=kmh`;
+  try{ meteo = await getJSON(u); meteo.demo = false; }
+  catch(e){ if(!meteo) meteo = demoMeteo(); }
+  lastHTML = ""; renderFlights();
+}
+function demoMeteo(){
+  const now = new Date(), hrs = [], t = [], wc = [], pp = [], dy = [];
+  for (let i=0;i<48;i++){ const d=new Date(now); d.setMinutes(0,0,0); d.setHours(d.getHours()+i);
+    hrs.push(d.toISOString().slice(0,13)+":00"); t.push(8+3*Math.sin(i/4)); wc.push([2,3,61,80,2,1][i%6]); pp.push([10,20,60,70,30,5][i%6]); dy.push(d.getHours()>7&&d.getHours()<17?1:0); }
+  const days = Array.from({length:6},(_,i)=>{const d=new Date(now); d.setDate(d.getDate()+i); return d.toISOString().slice(0,10);});
+  return {demo:true, current:{temperature_2m:9.4,apparent_temperature:6.1,relative_humidity_2m:84,weather_code:3,wind_speed_10m:26,wind_direction_10m:240,wind_gusts_10m:48,pressure_msl:1009,is_day:1,precipitation:0},
+    hourly:{time:hrs,temperature_2m:t,weather_code:wc,precipitation_probability:pp,is_day:dy},
+    daily:{time:days,weather_code:[3,61,80,2,1,63],temperature_2m_max:[10,9,8,7,6,9],temperature_2m_min:[5,6,3,1,0,4],precipitation_probability_max:[30,80,70,20,10,60],
+      sunrise:days.map(d=>d+"T08:12"),sunset:days.map(d=>d+"T16:44")}};
+}
+function idleHTML(total, farther){
+  const m = meteo;
+  const quiet = `GEEN VLIEGTUIGEN BINNEN ${CFG.r} KM${farther?` · ${farther} IETS VERDER WEG`:""}${m&&m.demo?" · WEER: DEMO-DATA":""}`;
+  if (!m) return `<div class="empty"><div class="big glow">RUSTIG IN DE LUCHT</div><div class="sm">${quiet}</div></div>`;
+  const c = m.current, [lbl] = WMO(c.weather_code), H = m.hourly, D = m.daily;
+  const nowIso = new Date(Date.now() - new Date().getTimezoneOffset()*6e4).toISOString().slice(0,13);
+  let i0 = H.time.findIndex(t => t.slice(0,13) >= nowIso); if (i0<0) i0 = 0;
+  const hours = Array.from({length:8},(_,k)=>i0+1+k*2).filter(i=>i<H.time.length).map(i=>`<div class="h"><b>${H.time[i].slice(11,13)}u</b>${wIcon(H.weather_code[i],H.is_day[i])}<i>${Math.round(H.temperature_2m[i])}°</i><em>${H.precipitation_probability[i]>=20?H.precipitation_probability[i]+"%":""}</em></div>`).join("");
+  const lo = Math.min(...D.temperature_2m_min.slice(0,5)), hi = Math.max(...D.temperature_2m_max.slice(0,5)), sp = Math.max(1,hi-lo);
+  const days = D.time.slice(0,5).map((d,i)=>{
+    const dn = i===0?"VANDAAG":new Date(d+"T12:00").toLocaleDateString("nl-BE",{weekday:"short"}).toUpperCase().replace(".","");
+    const a = D.temperature_2m_min[i], b = D.temperature_2m_max[i];
+    return `<div class="day"><span class="dn">${dn}</span>${wIcon(D.weather_code[i])}<span class="lbl">${WMO(D.weather_code[i])[0]}</span>
+      <span class="lo">${Math.round(a)}°</span><span class="bar"><span style="left:${(a-lo)/sp*100}%;right:${100-(b-lo)/sp*100}%"></span></span><span class="hi">${Math.round(b)}°</span>
+      <span class="pp">${D.precipitation_probability_max[i]>=20?"☂ "+D.precipitation_probability_max[i]+"%":""}</span></div>`;
+  }).join("");
+  const kt = Math.round(c.wind_speed_10m/1.852), gkt = Math.round(c.wind_gusts_10m/1.852);
+  return `<div class="idle">
+    <div class="now">
+      <div class="top"><div class="ico">${wIcon(c.weather_code,c.is_day)}</div>
+        <div><div class="tmp glow">${Math.round(c.temperature_2m)}<small>°C</small></div><div class="desc">${lbl}</div><div class="feel">Voelt als ${Math.round(c.apparent_temperature)}° · ${esc(CFG.name)}</div></div></div>
+      <div class="grid">
+        <div><b>WIND</b><i>${card(c.wind_direction_10m)} ${Math.round(c.wind_speed_10m)} km/u</i></div>
+        <div><b>WIND (KT)</b><i>${String(Math.round(c.wind_direction_10m)).padStart(3,"0")}° ${kt}${gkt>kt+9?"G"+gkt:""} kt</i></div>
+        <div><b>VOCHTIGHEID</b><i>${c.relative_humidity_2m}%</i></div>
+        <div><b>LUCHTDRUK</b><i>${Math.round(c.pressure_msl)} hPa</i></div>
+        <div><b>ZON OP</b><i>☀ ${D.sunrise[0].slice(11,16)}</i></div>
+        <div><b>ZON ONDER</b><i>☾ ${D.sunset[0].slice(11,16)}</i></div>
+      </div>
+      <div class="quiet">${quiet}</div>
+    </div>
+    <div class="fc"><div class="hours">${hours}</div><div class="days">${days}</div></div>
+  </div>`;
+}
+
+/* ================= DIAGNOSE ================= */
+async function runDiag(){
+  const box = $("#diag"); box.style.display="block";
+  const nm = Math.ceil(CFG.r / KM_PER_NM) + 2;
+  const tests = [
+    ["adsb.lol", `https://api.adsb.lol/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`],
+    ["adsb.fi", `https://opendata.adsb.fi/api/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`],
+    ["airplanes.live", `https://api.airplanes.live/v2/point/${CFG.lat}/${CFG.lon}/${nm}`],
+    ["OpenSky", `https://opensky-network.org/api/states/all?lamin=${CFG.lat-.3}&lomin=${CFG.lon-.4}&lamax=${CFG.lat+.3}&lomax=${CFG.lon+.4}`],
+    ["adsbdb (routes)", "https://api.adsbdb.com/v0/airline/BEL"],
+    ["METAR (aviationweather)", "https://aviationweather.gov/api/data/metar?ids=EBBR&format=json"]
+  ];
+  const routes = ["direct", ...proxyList()];
+  const name = r => r==="direct" ? "direct" : new URL(r).host;
+  let html = `<h2 style="font-family:var(--led);color:var(--amber);font-size:2.2rem">DIAGNOSE</h2>
+    <p style="color:var(--dim)">Browser: ${esc(navigator.userAgent)}<br>Pagina: ${esc(location.origin)}</p>
+    <table style="border-collapse:collapse;margin-top:1rem"><tr><th style="text-align:left;padding-right:2rem">Bron</th>${routes.map(r=>`<th style="padding:0 1.2rem">${esc(name(r))}</th>`).join("")}</tr>`;
+  for (const [label,url] of tests){
+    html += `<tr><td style="padding-right:2rem">${esc(label)}</td>`;
+    for (const r of routes){
+      const t0 = performance.now(); let cell;
+      try{
+        const res = await fetchT(r==="direct"?url:r+encodeURIComponent(url), {}, 10000);
+        const txt = await res.text(); JSON.parse(txt);
+        cell = `<span style="color:var(--green)">OK ${Math.round(performance.now()-t0)} ms</span>`;
+      }catch(e){ cell = `<span style="color:var(--red)">${esc(e instanceof SyntaxError ? "geen JSON" : e.message)}</span>`; }
+      html += `<td style="padding:0 1.2rem;text-align:center">${cell}</td>`;
+      box.innerHTML = html + "</tr></table><p>Bezig…</p>";
+    }
+    html += "</tr>";
+  }
+  box.innerHTML = html + `</table><p style="margin-top:1.5rem;color:var(--dim)">Maak een screenshot en stuur die door. Sluiten: Esc of tik hier.</p>`;
+  box.onclick = () => box.style.display="none";
+}
+
+/* ================= START ================= */
+try{ const q=new URLSearchParams(location.search); if (q.has("diag")) setTimeout(runDiag, 300); if (q.has("weer")) forceIdle = true; }catch(e){}
+applyCfg(); tick(); setInterval(tick, 1000);
+cleanRoutes();
+(async function loopFlights(){
+  await fetchFlights(); renderFlights();
+  setTimeout(loopFlights, (mode==="demo" ? 5 : CFG.flightEvery) * 1000);
+})();
+setInterval(renderFlights, 4000);          // re-render as routes arrive
+fetchWx();
+fetchMeteo(); setInterval(fetchMeteo, 900000);
+requestAnimationFrame(drawRadar);
+setInterval(shift, 180000);
+wake(); document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") wake(); });
+</script>
+</body>
+</html>
