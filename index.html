@@ -514,10 +514,15 @@ function parseMetar(raw){
   if (o.vis==null && o.ceil==null && !o.cavok) o.cat = "NA";
   return o;
 }
+function metarDate(o){
+  if (!o || !o.time) return null;
+  const n = new Date(); const d = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), o.time.d, o.time.h, o.time.mi));
+  if (d - n > 864e5) d.setUTCMonth(d.getUTCMonth()-1);
+  return d;
+}
 function metarAge(o){
   if (!o.time) return "";
-  const n = new Date(); let d = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), o.time.d, o.time.h, o.time.mi));
-  if (d - n > 864e5) d.setUTCMonth(d.getUTCMonth()-1);
+  const n = new Date(), d = metarDate(o);
   const min = Math.round((n-d)/60000);
   return `${String(o.time.h).padStart(2,"0")}${String(o.time.mi).padStart(2,"0")}Z · ${min<1?"net":min+" min geleden"}`;
 }
@@ -540,8 +545,8 @@ async function fetchWx(){
   if (!CFG.demo){
     try{
       const [m, t] = await Promise.all([
-        getJSON(`https://aviationweather.gov/api/data/metar?ids=${ids.join(",")}&format=json`),
-        getJSON(`https://aviationweather.gov/api/data/taf?ids=${ids.join(",")}&format=json`).catch(()=>[])
+        getJSON(`https://aviationweather.gov/api/data/metar?ids=${permIds(ids)}&format=json`),
+        getJSON(`https://aviationweather.gov/api/data/taf?ids=${permIds(ids)}&format=json`).catch(()=>[])
       ]);
       ids.forEach(id=>{
         const mm = (m||[]).find(x=>x.icaoId===id), tt = (t||[]).find(x=>x.icaoId===id);
@@ -551,7 +556,38 @@ async function fetchWx(){
     }catch(e){}
   }
   if (!ok) ids.forEach(id => { if(!wx[id] || wx[id].demo) wx[id] = demoWx(id); });
+  scheduleWx(ids, ok);
   renderWx(ids);
+}
+// Different station order = different URL, so the Worker cache (5 min) is bypassed on 2-min retries.
+function permIds(ids){
+  const P = [[0,1,2],[1,2,0],[2,0,1],[0,2,1],[2,1,0],[1,0,2]];
+  if (ids.length < 2) return ids.join(",");
+  const p = P[Math.floor(Date.now()/120000) % (ids.length===2 ? 2 : 6)];
+  return p.filter(i=>i<ids.length).map(i=>ids[i]).join(",");
+}
+// METARs in BE: every 30 min (~:20/:50), at aviationweather.gov ~5 min later.
+// Fetch at obs+36 min; if not yet in, retry every 2 min; a station late >18 min is treated as hourly.
+let wxTimer = null, wxNext = null;
+function scheduleWx(ids, ok){
+  clearTimeout(wxTimer);
+  const now = Date.now(), M = 60000;
+  let delay = 10*M;
+  if (ok){
+    const targets = ids.map(id => metarDate(wx[id]?.metar ? parseMetar(wx[id].metar) : null)).filter(Boolean).map(d => {
+      const obs = d.getTime();
+      if (now < obs + 48*M) return obs + 36*M;        // half-hourly expected
+      if (now < obs + 78*M) return obs + 66*M;        // maybe hourly
+      return null;                                     // station silent: normal 10-min cadence
+    }).filter(Boolean);
+    if (targets.length){
+      const t = Math.min(...targets);
+      delay = t <= now ? 2*M : Math.min(t - now, 10*M);
+    }
+  }
+  delay = Math.max(delay, 30000);
+  wxNext = new Date(now + delay);
+  wxTimer = setTimeout(fetchWx, delay);
 }
 function renderWx(ids){
   $("#wx").innerHTML = ids.map(id=>{
@@ -567,7 +603,7 @@ function renderWx(ids){
         <div><b>TEMP / DAUW</b><i>${o.temp??"—"}° / ${o.dew??"—"}°</i></div>
         <div><b>WEER</b><i>${esc(o.wx.join(", ")||"—")}</i></div>
       </div>
-      <div class="raw"><span class="lbl">METAR</span>${esc(w.metar)} <span class="lbl">· ${metarAge(o)}</span></div>`
+      <div class="raw"><span class="lbl">METAR</span>${esc(w.metar)} <span class="lbl">· ${metarAge(o)}${wxNext?` · check ${wxNext.toLocaleTimeString("nl-BE",{hour:"2-digit",minute:"2-digit"})}`:""}</span></div>`
       :`<div class="raw"><span class="lbl">METAR</span>niet beschikbaar</div><div></div>`}
       <div class="taf"><div class="in"><span class="lbl">TAF </span>${w.taf?fmtTaf(w.taf):"niet beschikbaar"}</div></div>
     </div>`;
@@ -773,7 +809,7 @@ cleanRoutes();
   setTimeout(loopFlights, (mode==="demo" ? 5 : CFG.flightEvery) * 1000);
 })();
 setInterval(renderFlights, 4000);          // re-render as routes arrive
-fetchWx(); setInterval(fetchWx, CFG.wxEvery * 1000);
+fetchWx();
 fetchMeteo(); setInterval(fetchMeteo, 900000);
 requestAnimationFrame(drawRadar);
 setInterval(shift, 180000);
