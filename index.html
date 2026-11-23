@@ -435,7 +435,7 @@ let lastHTML = "";
 
 /* ================= RADAR ================= */
 const cv = $("#radar"), cx = cv.getContext("2d");
-const MARKERS = [{n:"EBUL",lat:51.144,lon:3.474},{n:"EBGT",lat:51.0644,lon:3.7097}]; // Ursel, Gent Sint-Denijs-Westrem (approx.)
+const MARKERS = [{n:"EBUL",lat:51.1442,lon:3.4756}]; // Ursel, Gent Sint-Denijs-Westrem (approx.)
 function drawRadar(){
   const dpr = window.devicePixelRatio||1, w = cv.clientWidth, h = cv.clientHeight;
   if (cv.width !== w*dpr || cv.height !== h*dpr){ cv.width=w*dpr; cv.height=h*dpr; }

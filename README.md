@@ -14,3 +14,6 @@ Open `https://stefanmin13.github.io/flightwall-tv/?diag=1` (of druk **D**) om pe
 
 ## Tiegem
 Aparte pagina: https://stefanmin13.github.io/flightwall-tv/tiegem/ (eigen standaardlocatie, luchthavens LFQQ/EBOS/EBBR en eigen opgeslagen instellingen).
+
+## Gent
+Aparte pagina: https://stefanmin13.github.io/flightwall-tv/gent/ (EBOS/EBBR/EBAW, eigen opgeslagen instellingen).
