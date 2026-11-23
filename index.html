@@ -140,6 +140,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
   <section id="wx"></section>
 </div>
 
+<div id="diag" style="display:none;position:fixed;inset:0;z-index:120;background:#050607;overflow:auto;padding:2rem;font-size:1.25rem;line-height:1.6"></div>
 <div id="set">
   <form id="setForm">
     <h2>INSTELLINGEN</h2>
@@ -151,7 +152,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
     <label for="s_minalt">Min. hoogte (ft)</label><input id="s_minalt" inputmode="numeric">
     <label for="s_apts">Luchthavens (3× ICAO)</label><input id="s_apts">
     <label for="s_dim">Nachtmodus (uur van–tot)</label><input id="s_dim" placeholder="23-7">
-    <label for="s_proxy">CORS-proxy (optioneel)</label><input id="s_proxy">
+    <label for="s_proxy">Eigen proxy (Worker-URL ?url=)</label><input id="s_proxy">
     <label for="s_demo">Demo-modus (1/0)</label><input id="s_demo" inputmode="numeric">
     <p class="hint">Opgeslagen in deze browser. Ook via URL: ?lat=51.12&amp;lon=3.67&amp;r=25&amp;apts=EBOS,EBBR,EBAW</p>
     <div class="row"><button type="button" id="setCancel">Annuleren</button><button type="submit" class="pri">Opslaan</button></div>
@@ -164,7 +165,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 const DEFAULTS = {
   name: "Sleidinge", lat: 51.1247, lon: 3.6658, r: 25, max: 5, minalt: 0,
   apts: "EBOS,EBBR,EBAW", dim: "23-7",
-  proxy: "https://api.allorigins.win/raw?url=", demo: 0,
+  proxy: "", demo: 0,
   flightEvery: 10, wxEvery: 600
 };
 function loadCfg(){
@@ -225,20 +226,39 @@ function distBrg(lat1,lon1,lat2,lon2){
   const y=Math.sin(dLon)*Math.cos(lat2*toR), x=Math.cos(lat1*toR)*Math.sin(lat2*toR)-Math.sin(lat1*toR)*Math.cos(lat2*toR)*Math.cos(dLon);
   return {km:d, brg:(Math.atan2(y,x)/toR+360)%360};
 }
-const hostMode = {}; // host -> "direct" | "proxy"
+// Route per host: "direct" or index of a proxy that worked. Public proxies are a fallback;
+// a own Cloudflare Worker (setting "proxy") is tried first and is the reliable option.
+const PUBLIC_PROXIES = [
+  "https://api.allorigins.win/raw?url=",
+  "https://api.codetabs.com/v1/proxy/?quest=",
+  "https://corsproxy.io/?url="
+];
+const proxyList = () => [CFG.proxy, ...PUBLIC_PROXIES].filter((p,i,a)=>p && a.indexOf(p)===i);
+const hostRoute = {};
+const diagLog = {}; // host -> last result text
 async function fetchT(url, opt={}, ms=9000){
   const ctl = new AbortController(); const t = setTimeout(()=>ctl.abort(), ms);
-  try{ const r = await fetch(url, {...opt, signal:ctl.signal}); if(!r.ok) throw new Error(r.status); return r; }
+  try{ const r = await fetch(url, {...opt, signal:ctl.signal}); if(!r.ok) throw new Error("HTTP "+r.status); return r; }
+  catch(e){ throw new Error(e.name==="AbortError" ? "timeout" : (e.message||"geblokkeerd")); }
   finally{ clearTimeout(t); }
 }
 async function getText(url){
   const host = new URL(url).host;
-  if (hostMode[host] !== "proxy"){
-    try{ const r = await fetchT(url); hostMode[host]="direct"; return await r.text(); }
-    catch(e){ if(!CFG.proxy) throw e; }
+  const routes = ["direct", ...proxyList()];
+  const known = hostRoute[host];
+  if (known && routes.includes(known)) { routes.splice(routes.indexOf(known),1); routes.unshift(known); }
+  let lastErr;
+  for (const r of routes){
+    try{
+      const res = await fetchT(r==="direct" ? url : r + encodeURIComponent(url), {}, r==="direct" ? 7000 : 10000);
+      const txt = await res.text();
+      if (r!=="direct" && /^\s*</.test(txt)) throw new Error("proxy gaf HTML");
+      hostRoute[host] = r; diagLog[host] = "OK via " + (r==="direct" ? "direct" : new URL(r).host);
+      return txt;
+    }catch(e){ lastErr = e; }
   }
-  const r = await fetchT(CFG.proxy + encodeURIComponent(url), {}, 12000);
-  hostMode[host]="proxy"; return await r.text();
+  diagLog[host] = "MISLUKT: " + (lastErr?.message || "?");
+  throw lastErr || new Error("geen route");
 }
 const getJSON = async url => JSON.parse(await getText(url));
 function store(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} }
@@ -260,13 +280,14 @@ async function fetchFlights(){
   if (CFG.demo){ aircraft = demoAircraft(); setMode("demo"); return; }
   const sources = [
     `https://api.adsb.lol/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`,
-    `https://opendata.adsb.fi/api/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`
+    `https://opendata.adsb.fi/api/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`,
+    `https://api.airplanes.live/v2/point/${CFG.lat}/${CFG.lon}/${nm}`
   ];
   for (const u of sources){
     try{
       const j = await getJSON(u);
       aircraft = normAdsbx(j.ac || j.aircraft || [], now);
-      failCount = 0; setMode("live", new URL(u).host.replace("api.","").replace("opendata.",""));
+      failCount = 0; setMode("live", new URL(u).host.replace(/^(api|opendata)\./,""));
       return;
     }catch(e){}
   }
@@ -286,7 +307,7 @@ function setMode(m, src){
   mode = m;
   const dot=$("#dot"), st=$("#stat");
   dot.className = "dot" + (m==="demo"?" demo":m==="err"?" err":"");
-  st.textContent = m==="live" ? `LIVE · ${src.toUpperCase()}` : m==="demo" ? "DEMO-DATA (geen live verbinding)" : "VERBINDING ONDERBROKEN";
+  st.textContent = m==="live" ? `LIVE · ${src.toUpperCase()}` : m==="demo" ? (CFG.demo ? "DEMO-MODUS" : "DEMO-DATA · geen live verbinding · ?diag=1") : "VERBINDING ONDERBROKEN";
 }
 
 /* ---- routes (adsbdb + adsb.lol routeset), cached ---- */
@@ -590,6 +611,8 @@ $("#setForm").onsubmit = e => {
 };
 document.addEventListener("keydown", e => {
   if ($("#set").classList.contains("on")){ if(e.key==="Escape") closeSet(); return; }
+  if (e.key==="Escape") $("#diag").style.display="none";
+  if (e.key==="d"||e.key==="D") runDiag();
   if (e.key==="s"||e.key==="S"||e.key==="ContextMenu") openSet();
 });
 function applyCfg(){
@@ -597,7 +620,43 @@ function applyCfg(){
   $("#radarTitle").textContent = `RADAR · ${CFG.r} KM · NOORD BOVEN`;
 }
 
+/* ================= DIAGNOSE ================= */
+async function runDiag(){
+  const box = $("#diag"); box.style.display="block";
+  const nm = Math.ceil(CFG.r / KM_PER_NM) + 2;
+  const tests = [
+    ["adsb.lol", `https://api.adsb.lol/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`],
+    ["adsb.fi", `https://opendata.adsb.fi/api/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`],
+    ["airplanes.live", `https://api.airplanes.live/v2/point/${CFG.lat}/${CFG.lon}/${nm}`],
+    ["OpenSky", `https://opensky-network.org/api/states/all?lamin=${CFG.lat-.3}&lomin=${CFG.lon-.4}&lamax=${CFG.lat+.3}&lomax=${CFG.lon+.4}`],
+    ["adsbdb (routes)", "https://api.adsbdb.com/v0/airline/BEL"],
+    ["METAR (aviationweather)", "https://aviationweather.gov/api/data/metar?ids=EBBR&format=json"]
+  ];
+  const routes = ["direct", ...proxyList()];
+  const name = r => r==="direct" ? "direct" : new URL(r).host;
+  let html = `<h2 style="font-family:var(--led);color:var(--amber);font-size:2.2rem">DIAGNOSE</h2>
+    <p style="color:var(--dim)">Browser: ${esc(navigator.userAgent)}<br>Pagina: ${esc(location.origin)}</p>
+    <table style="border-collapse:collapse;margin-top:1rem"><tr><th style="text-align:left;padding-right:2rem">Bron</th>${routes.map(r=>`<th style="padding:0 1.2rem">${esc(name(r))}</th>`).join("")}</tr>`;
+  for (const [label,url] of tests){
+    html += `<tr><td style="padding-right:2rem">${esc(label)}</td>`;
+    for (const r of routes){
+      const t0 = performance.now(); let cell;
+      try{
+        const res = await fetchT(r==="direct"?url:r+encodeURIComponent(url), {}, 10000);
+        const txt = await res.text(); JSON.parse(txt);
+        cell = `<span style="color:var(--green)">OK ${Math.round(performance.now()-t0)} ms</span>`;
+      }catch(e){ cell = `<span style="color:var(--red)">${esc(e instanceof SyntaxError ? "geen JSON" : e.message)}</span>`; }
+      html += `<td style="padding:0 1.2rem;text-align:center">${cell}</td>`;
+      box.innerHTML = html + "</tr></table><p>Bezig…</p>";
+    }
+    html += "</tr>";
+  }
+  box.innerHTML = html + `</table><p style="margin-top:1.5rem;color:var(--dim)">Maak een screenshot en stuur die door. Sluiten: Esc of tik hier.</p>`;
+  box.onclick = () => box.style.display="none";
+}
+
 /* ================= START ================= */
+try{ if (new URLSearchParams(location.search).has("diag")) setTimeout(runDiag, 300); }catch(e){}
 applyCfg(); tick(); setInterval(tick, 1000);
 cleanRoutes();
 (async function loopFlights(){
