@@ -96,6 +96,35 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 @keyframes tafs{0%,15%{transform:translateY(0)}85%,100%{transform:translateY(var(--shift))}}
 .taf .lbl{color:var(--faint)}
 
+/* idle weather screen */
+.idle{flex:1;display:grid;grid-template-columns:1fr 1.35fr;gap:1.6rem;min-height:0}
+.now{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:1.6rem 2rem;display:flex;flex-direction:column;justify-content:space-between;min-height:0}
+.now .top{display:flex;align-items:center;gap:1.6rem}
+.now .ico{width:11rem;height:11rem;flex:none}
+.now .tmp{font-family:var(--led);font-weight:900;font-size:8.5rem;line-height:.9;color:var(--amber)}
+.now .tmp small{font-size:3rem;vertical-align:top}
+.now .desc{font-size:1.7rem;font-weight:700;margin-top:.4rem}
+.now .feel{font-size:1.15rem;color:var(--dim)}
+.now .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem 1.4rem}
+.now .grid div{display:flex;flex-direction:column}
+.now .grid b{font-size:.8rem;color:var(--faint);letter-spacing:.14em;font-weight:400}
+.now .grid i{font-style:normal;font-size:1.45rem;font-weight:700;white-space:nowrap}
+.now .quiet{font-size:1.05rem;color:var(--dim);letter-spacing:.08em;border-top:1px solid var(--line);padding-top:.8rem}
+.fc{display:grid;grid-template-rows:auto 1fr;gap:1.2rem;min-height:0}
+.hours{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:1rem 1.2rem;display:grid;grid-template-columns:repeat(8,1fr);gap:.4rem;text-align:center}
+.hours .h b{display:block;font-size:.95rem;color:var(--dim);font-weight:400}
+.hours .h svg{width:3.6rem;height:3.6rem;margin:.3rem auto}
+.hours .h i{display:block;font-style:normal;font-size:1.5rem;font-weight:700}
+.hours .h em{display:block;font-style:normal;font-size:.95rem;color:var(--blue);min-height:1.2em}
+.days{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:.6rem 1.4rem;display:flex;flex-direction:column;justify-content:space-around;min-height:0}
+.day{display:grid;grid-template-columns:6.4rem 3.4rem 1.7fr 3.2rem 1fr 3.4rem 5.2rem;align-items:center;gap:1rem;font-size:1.35rem}
+.day .dn{font-weight:700;letter-spacing:.06em}
+.day svg{width:3rem;height:3rem}
+.day .lbl{color:var(--dim);font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day .lo{color:var(--blue);text-align:right} .day .hi{color:var(--amber)}
+.day .bar{height:.5rem;border-radius:.25rem;background:#1a1f26;position:relative}
+.day .bar span{position:absolute;top:0;bottom:0;border-radius:.25rem;background:linear-gradient(90deg,var(--blue),var(--amber))}
+.day .pp{color:var(--blue);font-size:1.05rem;text-align:right}
 /* settings */
 #set{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:none;align-items:center;justify-content:center}
 #set.on{display:flex}
@@ -373,9 +402,9 @@ function renderFlights(){
   shownHex = new Set(list.map(a=>a.hex));
   list.forEach(getRoute);
   const box = $("#flights");
-  if (!total){
-    lastHTML = ""; box.innerHTML = `<div class="empty"><div class="big glow">RUSTIG IN DE LUCHT</div>
-      <div class="sm">Geen vliegtuigen binnen ${CFG.r} km van ${esc(CFG.name)}${aircraft.length?` · ${aircraft.length} iets verder weg`:""}</div></div>`;
+  if (!total || forceIdle){
+    const html = idleHTML(total, aircraft.length);
+    if (html !== lastHTML){ box.innerHTML = html; lastHTML = html; }
     return;
   }
   const html = list.map(a => {
@@ -611,11 +640,93 @@ document.addEventListener("keydown", e => {
   if ($("#set").classList.contains("on")){ if(e.key==="Escape") closeSet(); return; }
   if (e.key==="Escape") $("#diag").style.display="none";
   if (e.key==="d"||e.key==="D") runDiag();
+  if (e.key==="w"||e.key==="W"){ forceIdle = !forceIdle; lastHTML=""; renderFlights(); }
   if (e.key==="s"||e.key==="S"||e.key==="ContextMenu") openSet();
 });
 function applyCfg(){
   $("#loc").textContent = `${CFG.name.toUpperCase()} · ${CFG.r} KM`;
   $("#radarTitle").textContent = `RADAR · ${CFG.r} KM · NOORD BOVEN`;
+}
+
+
+/* ================= WEERSCHERM (geen verkeer) ================= */
+let meteo = null, forceIdle = false;
+const WMO = c => c===0?["Helder","sun"]:c===1?["Overwegend helder","sun"]:c===2?["Half bewolkt","part"]:c===3?["Bewolkt","cloud"]:
+  c<=48?["Mist","fog"]:c<=55?["Motregen","drizzle"]:c<=57?["Ijzel (motregen)","drizzle"]:c<=65?[c===65?"Zware regen":c===63?"Regen":"Lichte regen","rain"]:
+  c<=67?["Ijzel","rain"]:c<=75?["Sneeuw","snow"]:c===77?["Sneeuwkorrels","snow"]:c<=82?[c===82?"Zware buien":"Regenbuien","shower"]:
+  c<=86?["Sneeuwbuien","snow"]:c===95?["Onweer","storm"]:["Onweer met hagel","storm"];
+function wIcon(code, day=1){
+  const k = WMO(code)[1];
+  const sun = `<circle cx="32" cy="30" r="11" fill="#ffb238"/>${[0,45,90,135,180,225,270,315].map(a=>`<line x1="32" y1="12" x2="32" y2="6" stroke="#ffb238" stroke-width="3.5" stroke-linecap="round" transform="rotate(${a} 32 30)"/>`).join("")}`;
+  const moon = `<path d="M38 14a16 16 0 1 0 12 26a13 13 0 0 1-12-26z" fill="#e6dcc0"/>`;
+  const cloud = (x=0,y=0,c="#cfd6df") => `<path transform="translate(${x} ${y})" d="M20 50h28a11 11 0 0 0 0-22a15 15 0 0 0-28 4a9 9 0 0 0 0 18z" fill="${c}"/>`;
+  const drops = (n,col="#5aa8ff") => Array.from({length:n},(_,i)=>`<line x1="${24+i*9}" y1="54" x2="${21+i*9}" y2="61" stroke="${col}" stroke-width="3" stroke-linecap="round"/>`).join("");
+  let g;
+  switch(k){
+    case "sun": g = day?sun:moon; break;
+    case "part": g = `<g transform="translate(-8 -6) scale(.85)">${day?sun:moon}</g>${cloud(4,4)}`; break;
+    case "cloud": g = cloud(-4,-8,"#8f98a3")+cloud(4,2); break;
+    case "fog": g = cloud(0,-8,"#8f98a3")+[48,54,60].map((y,i)=>`<line x1="${12+i*3}" y1="${y}" x2="${52-i*3}" y2="${y}" stroke="#8a8f98" stroke-width="3" stroke-linecap="round"/>`).join(""); break;
+    case "drizzle": g = cloud(0,-6)+drops(3,"#8cc4ff"); break;
+    case "rain": g = cloud(0,-6,"#8f98a3")+drops(4); break;
+    case "shower": g = `<g transform="translate(-8 -8) scale(.8)">${day?sun:moon}</g>`+cloud(4,-4)+drops(3); break;
+    case "snow": g = cloud(0,-6)+[22,32,42].map(x=>`<text x="${x}" y="63" fill="#fff" font-size="12" text-anchor="middle">✱</text>`).join(""); break;
+    case "storm": g = cloud(0,-6,"#6d7680")+`<path d="M34 46l-8 10h7l-4 9l11-13h-7l4-6z" fill="#ffd23f"/>`; break;
+  }
+  return `<svg viewBox="0 0 64 64">${g}</svg>`;
+}
+async function fetchMeteo(){
+  const u = `https://api.open-meteo.com/v1/forecast?latitude=${CFG.lat}&longitude=${CFG.lon}`+
+    `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl,is_day,precipitation`+
+    `&hourly=temperature_2m,weather_code,precipitation_probability,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset`+
+    `&timezone=Europe%2FBrussels&forecast_days=6&wind_speed_unit=kmh`;
+  try{ meteo = await getJSON(u); meteo.demo = false; }
+  catch(e){ if(!meteo) meteo = demoMeteo(); }
+  lastHTML = ""; renderFlights();
+}
+function demoMeteo(){
+  const now = new Date(), hrs = [], t = [], wc = [], pp = [], dy = [];
+  for (let i=0;i<48;i++){ const d=new Date(now); d.setMinutes(0,0,0); d.setHours(d.getHours()+i);
+    hrs.push(d.toISOString().slice(0,13)+":00"); t.push(8+3*Math.sin(i/4)); wc.push([2,3,61,80,2,1][i%6]); pp.push([10,20,60,70,30,5][i%6]); dy.push(d.getHours()>7&&d.getHours()<17?1:0); }
+  const days = Array.from({length:6},(_,i)=>{const d=new Date(now); d.setDate(d.getDate()+i); return d.toISOString().slice(0,10);});
+  return {demo:true, current:{temperature_2m:9.4,apparent_temperature:6.1,relative_humidity_2m:84,weather_code:3,wind_speed_10m:26,wind_direction_10m:240,wind_gusts_10m:48,pressure_msl:1009,is_day:1,precipitation:0},
+    hourly:{time:hrs,temperature_2m:t,weather_code:wc,precipitation_probability:pp,is_day:dy},
+    daily:{time:days,weather_code:[3,61,80,2,1,63],temperature_2m_max:[10,9,8,7,6,9],temperature_2m_min:[5,6,3,1,0,4],precipitation_probability_max:[30,80,70,20,10,60],
+      sunrise:days.map(d=>d+"T08:12"),sunset:days.map(d=>d+"T16:44")}};
+}
+function idleHTML(total, farther){
+  const m = meteo;
+  const quiet = `GEEN VLIEGTUIGEN BINNEN ${CFG.r} KM${farther?` · ${farther} IETS VERDER WEG`:""}${m&&m.demo?" · WEER: DEMO-DATA":""}`;
+  if (!m) return `<div class="empty"><div class="big glow">RUSTIG IN DE LUCHT</div><div class="sm">${quiet}</div></div>`;
+  const c = m.current, [lbl] = WMO(c.weather_code), H = m.hourly, D = m.daily;
+  const nowIso = new Date(Date.now() - new Date().getTimezoneOffset()*6e4).toISOString().slice(0,13);
+  let i0 = H.time.findIndex(t => t.slice(0,13) >= nowIso); if (i0<0) i0 = 0;
+  const hours = Array.from({length:8},(_,k)=>i0+1+k*2).filter(i=>i<H.time.length).map(i=>`<div class="h"><b>${H.time[i].slice(11,13)}u</b>${wIcon(H.weather_code[i],H.is_day[i])}<i>${Math.round(H.temperature_2m[i])}°</i><em>${H.precipitation_probability[i]>=20?H.precipitation_probability[i]+"%":""}</em></div>`).join("");
+  const lo = Math.min(...D.temperature_2m_min.slice(0,5)), hi = Math.max(...D.temperature_2m_max.slice(0,5)), sp = Math.max(1,hi-lo);
+  const days = D.time.slice(0,5).map((d,i)=>{
+    const dn = i===0?"VANDAAG":new Date(d+"T12:00").toLocaleDateString("nl-BE",{weekday:"short"}).toUpperCase().replace(".","");
+    const a = D.temperature_2m_min[i], b = D.temperature_2m_max[i];
+    return `<div class="day"><span class="dn">${dn}</span>${wIcon(D.weather_code[i])}<span class="lbl">${WMO(D.weather_code[i])[0]}</span>
+      <span class="lo">${Math.round(a)}°</span><span class="bar"><span style="left:${(a-lo)/sp*100}%;right:${100-(b-lo)/sp*100}%"></span></span><span class="hi">${Math.round(b)}°</span>
+      <span class="pp">${D.precipitation_probability_max[i]>=20?"☂ "+D.precipitation_probability_max[i]+"%":""}</span></div>`;
+  }).join("");
+  const kt = Math.round(c.wind_speed_10m/1.852), gkt = Math.round(c.wind_gusts_10m/1.852);
+  return `<div class="idle">
+    <div class="now">
+      <div class="top"><div class="ico">${wIcon(c.weather_code,c.is_day)}</div>
+        <div><div class="tmp glow">${Math.round(c.temperature_2m)}<small>°C</small></div><div class="desc">${lbl}</div><div class="feel">Voelt als ${Math.round(c.apparent_temperature)}° · ${esc(CFG.name)}</div></div></div>
+      <div class="grid">
+        <div><b>WIND</b><i>${card(c.wind_direction_10m)} ${Math.round(c.wind_speed_10m)} km/u</i></div>
+        <div><b>WIND (KT)</b><i>${String(Math.round(c.wind_direction_10m)).padStart(3,"0")}° ${kt}${gkt>kt+9?"G"+gkt:""} kt</i></div>
+        <div><b>VOCHTIGHEID</b><i>${c.relative_humidity_2m}%</i></div>
+        <div><b>LUCHTDRUK</b><i>${Math.round(c.pressure_msl)} hPa</i></div>
+        <div><b>ZON OP</b><i>☀ ${D.sunrise[0].slice(11,16)}</i></div>
+        <div><b>ZON ONDER</b><i>☾ ${D.sunset[0].slice(11,16)}</i></div>
+      </div>
+      <div class="quiet">${quiet}</div>
+    </div>
+    <div class="fc"><div class="hours">${hours}</div><div class="days">${days}</div></div>
+  </div>`;
 }
 
 /* ================= DIAGNOSE ================= */
@@ -654,7 +765,7 @@ async function runDiag(){
 }
 
 /* ================= START ================= */
-try{ if (new URLSearchParams(location.search).has("diag")) setTimeout(runDiag, 300); }catch(e){}
+try{ const q=new URLSearchParams(location.search); if (q.has("diag")) setTimeout(runDiag, 300); if (q.has("weer")) forceIdle = true; }catch(e){}
 applyCfg(); tick(); setInterval(tick, 1000);
 cleanRoutes();
 (async function loopFlights(){
@@ -663,6 +774,7 @@ cleanRoutes();
 })();
 setInterval(renderFlights, 4000);          // re-render as routes arrive
 fetchWx(); setInterval(fetchWx, CFG.wxEvery * 1000);
+fetchMeteo(); setInterval(fetchMeteo, 900000);
 requestAnimationFrame(drawRadar);
 setInterval(shift, 180000);
 wake(); document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") wake(); });

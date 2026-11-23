@@ -2,7 +2,7 @@
 // Gebruik in de pagina-instelling "Eigen proxy":  https://<naam>.<account>.workers.dev/?url=
 const ALLOW = [
   "api.adsb.lol", "opendata.adsb.fi", "api.airplanes.live",
-  "opensky-network.org", "api.adsbdb.com", "aviationweather.gov"
+  "opensky-network.org", "api.adsbdb.com", "aviationweather.gov", "api.open-meteo.com"
 ];
 const CORS = {
   "Access-Control-Allow-Origin": "*",
