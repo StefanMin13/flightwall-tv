@@ -165,7 +165,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 const DEFAULTS = {
   name: "Sleidinge", lat: 51.1247, lon: 3.6658, r: 25, max: 5, minalt: 0,
   apts: "EBOS,EBBR,EBAW", dim: "23-7",
-  proxy: "", demo: 0,
+  proxy: "https://winter-dust-31e0flightwall.stefan-e9d.workers.dev/?url=", demo: 0,
   flightEvery: 10, wxEvery: 600
 };
 function loadCfg(){
@@ -175,6 +175,7 @@ function loadCfg(){
     const q = new URLSearchParams(location.search);
     for (const k of Object.keys(DEFAULTS)) if (q.has(k)) c[k] = q.get(k);
   }catch(e){}
+  if (!c.proxy) c.proxy = DEFAULTS.proxy;
   ["lat","lon","r","max","minalt","demo","flightEvery","wxEvery"].forEach(k=>c[k]=Number(c[k]));
   return c;
 }
