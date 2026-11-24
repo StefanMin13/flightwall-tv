@@ -17,3 +17,6 @@ Aparte pagina: https://stefanmin13.github.io/flightwall-tv/tiegem/ (eigen standa
 
 ## Gent
 Aparte pagina: https://stefanmin13.github.io/flightwall-tv/gent/ (EBOS/EBBR/EBAW, eigen opgeslagen instellingen).
+
+## Locaties
+Klik op de locatienaam bovenaan (of toets L, of 1-4) om te kiezen uit Sleidinge, Tiegem, Gent en Melle. De keuze wordt per browser bewaard. Via URL: `?loc=melle`.

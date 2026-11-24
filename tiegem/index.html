@@ -125,6 +125,18 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 .day .bar{height:.5rem;border-radius:.25rem;background:#1a1f26;position:relative}
 .day .bar span{position:absolute;top:0;bottom:0;border-radius:.25rem;background:linear-gradient(90deg,var(--blue),var(--amber))}
 .day .pp{color:var(--blue);font-size:1.05rem;text-align:right}
+/* location menu */
+#locMenu{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:110;display:none;align-items:center;justify-content:center}
+#locMenu.on{display:flex}
+#locMenu .box{background:var(--panel);border:1px solid var(--amber);border-radius:.6rem;padding:2rem 2.4rem;min-width:32rem}
+#locMenu h2{font-family:var(--led);font-weight:900;color:var(--amber);font-size:2rem;letter-spacing:.1em;margin-bottom:1.2rem}
+#locBtns{display:grid;gap:.8rem}
+#locBtns button{font:inherit;font-size:1.6rem;text-align:left;padding:.8rem 1.2rem;border-radius:.4rem;border:1px solid var(--line);background:#000;color:var(--text);cursor:pointer;display:flex;justify-content:space-between;gap:2rem}
+#locBtns button span{color:var(--dim);font-size:1.1rem;align-self:center}
+#locBtns button.cur{border-color:var(--amber);color:var(--amber)}
+#locBtns button:focus,#locBtns button:hover{outline:none;border-color:var(--amber);background:#1a1408}
+#locMenu p{margin-top:1.2rem;color:var(--dim);font-size:1rem}
+#loc:focus{outline:none;color:var(--amber)}
 /* settings */
 #set{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:100;display:none;align-items:center;justify-content:center}
 #set.on{display:flex}
@@ -154,7 +166,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 <body>
 <div id="wall">
   <header>
-    <div class="brand glow">FLIGHTWALL<small id="loc">TIEGEM · 25 KM</small></div>
+    <div class="brand glow">FLIGHTWALL<small id="loc" tabindex="0" role="button" title="Locatie kiezen (toets L)" style="cursor:pointer">TIEGEM · 25 KM ▾</small></div>
     <div class="status"><span class="dot" id="dot"></span><span id="stat">VERBINDEN…</span></div>
     <div class="clock">
       <div class="u"><div id="date"></div><div id="utc"></div></div>
@@ -170,6 +182,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 </div>
 
 <div id="diag" style="display:none;position:fixed;inset:0;z-index:120;background:#050607;overflow:auto;padding:2rem;font-size:1.25rem;line-height:1.6"></div>
+<div id="locMenu"><div class="box"><h2>LOCATIE</h2><div id="locBtns"></div><p>Toets 1–4 kiest meteen · Esc sluit</p></div></div>
 <div id="set">
   <form id="setForm">
     <h2>INSTELLINGEN</h2>
@@ -191,17 +204,26 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 <script>
 "use strict";
 /* ================= CONFIG ================= */
+// Vaste locaties: kies via de locatienaam bovenaan, toets L of 1-4, of ?loc=melle
+const PRESETS = {
+  sleidinge: {name:"Sleidinge", lat:51.1247, lon:3.6658, apts:"EBOS,EBBR,EBAW"},
+  tiegem:    {name:"Tiegem",    lat:50.8090, lon:3.4748, apts:"LFQQ,EBOS,EBBR"},
+  gent:      {name:"Gent",      lat:51.0543, lon:3.7174, apts:"EBOS,EBBR,EBAW"},
+  melle:     {name:"Melle",     lat:51.0023, lon:3.8053, apts:"EBOS,EBBR,EBAW"}
+};
+const PAGE_LOC = "tiegem";      // standaardlocatie van deze pagina
+const STORE_KEY = "fwtv_tiegem";          // eigen opslag per pagina
 const DEFAULTS = {
-  name: "Tiegem", lat: 50.8090, lon: 3.4748, r: 25, max: 5, minalt: 0,
-  apts: "LFQQ,EBOS,EBBR", dim: "23-7",
+  loc: PAGE_LOC, ...PRESETS[PAGE_LOC], r: 25, max: 5, minalt: 0, dim: "23-7",
   proxy: "https://winter-dust-31e0flightwall.stefan-e9d.workers.dev/?url=", demo: 0,
   flightEvery: 10, wxEvery: 600
 };
 function loadCfg(){
   let c = {...DEFAULTS};
-  try{ Object.assign(c, JSON.parse(localStorage.getItem("fwtv_tiegem") || "{}")); }catch(e){}
+  try{ Object.assign(c, JSON.parse(localStorage.getItem(STORE_KEY) || "{}")); }catch(e){}
   try{
     const q = new URLSearchParams(location.search);
+    const l = (q.get("loc")||"").toLowerCase(); if (PRESETS[l]) Object.assign(c, {loc:l}, PRESETS[l]);
     for (const k of Object.keys(DEFAULTS)) if (q.has(k)) c[k] = q.get(k);
   }catch(e){}
   if (!c.proxy) c.proxy = DEFAULTS.proxy;
@@ -435,7 +457,7 @@ let lastHTML = "";
 
 /* ================= RADAR ================= */
 const cv = $("#radar"), cx = cv.getContext("2d");
-const MARKERS = [{n:"EBKT",lat:50.8172,lon:3.2047}]; // Ursel, Gent Sint-Denijs-Westrem (approx.)
+const MARKERS = [{n:"EBUL",lat:51.1442,lon:3.4756},{n:"EBKT",lat:50.8172,lon:3.2047}]; // Ursel, Kortrijk-Wevelgem; enkel getoond binnen de radar
 function drawRadar(){
   const dpr = window.devicePixelRatio||1, w = cv.clientWidth, h = cv.clientHeight;
   if (cv.width !== w*dpr || cv.height !== h*dpr){ cv.width=w*dpr; cv.height=h*dpr; }
@@ -671,18 +693,44 @@ $("#setCancel").onclick = closeSet;
 $("#setForm").onsubmit = e => {
   e.preventDefault();
   const c = {}; F.forEach(k=>c[k]=$("#s_"+k).value.trim());
-  store("fwtv_tiegem", c); CFG = loadCfg(); Object.assign(CFG, c); ["lat","lon","r","max","minalt","demo"].forEach(k=>CFG[k]=Number(CFG[k]));
+  store(STORE_KEY, c); CFG = loadCfg(); Object.assign(CFG, c); ["lat","lon","r","max","minalt","demo"].forEach(k=>CFG[k]=Number(CFG[k]));
   closeSet(); applyCfg(); fetchFlights().then(renderFlights); fetchWx();
 };
 document.addEventListener("keydown", e => {
   if ($("#set").classList.contains("on")){ if(e.key==="Escape") closeSet(); return; }
+  if ($("#locMenu").classList.contains("on")){ if(e.key==="Escape") closeLoc(); else if (/^[1-9]$/.test(e.key)) pickLoc(Object.keys(PRESETS)[+e.key-1]); return; }
+  if (e.key==="l"||e.key==="L") openLoc();
+  if (/^[1-9]$/.test(e.key) && Object.keys(PRESETS)[+e.key-1]) pickLoc(Object.keys(PRESETS)[+e.key-1]);
   if (e.key==="Escape") $("#diag").style.display="none";
   if (e.key==="d"||e.key==="D") runDiag();
   if (e.key==="w"||e.key==="W"){ forceIdle = !forceIdle; lastHTML=""; renderFlights(); }
   if (e.key==="s"||e.key==="S"||e.key==="ContextMenu") openSet();
 });
+/* ================= LOCATIE KIEZEN ================= */
+function openLoc(){
+  const keys = Object.keys(PRESETS);
+  $("#locBtns").innerHTML = keys.map((k,i)=>`<button data-k="${k}" class="${CFG.loc===k?"cur":""}">${i+1}. ${esc(PRESETS[k].name)}<span>${PRESETS[k].apts.replace(/,/g," · ")}</span></button>`).join("");
+  $("#locBtns").querySelectorAll("button").forEach(b=>b.onclick=()=>pickLoc(b.dataset.k));
+  $("#locMenu").classList.add("on");
+  ($("#locBtns button.cur")||$("#locBtns button")).focus();
+}
+function closeLoc(){ $("#locMenu").classList.remove("on"); }
+function pickLoc(k){
+  const p = PRESETS[k]; if (!p) return;
+  let saved = {}; try{ saved = JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); }catch(e){}
+  Object.assign(saved, {loc:k, name:p.name, lat:p.lat, lon:p.lon, apts:p.apts});
+  store(STORE_KEY, saved);
+  Object.assign(CFG, {loc:k, name:p.name, lat:p.lat, lon:p.lon, apts:p.apts});
+  closeLoc(); applyCfg();
+  aircraft = []; lastHTML = ""; wx = {}; meteo = null;
+  fetchFlights().then(renderFlights); fetchWx(); fetchMeteo();
+}
+$("#loc").onclick = openLoc;
+$("#loc").onkeydown = e => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); e.stopPropagation(); openLoc(); } };
+$("#locMenu").onclick = e => { if (e.target.id==="locMenu") closeLoc(); };
+
 function applyCfg(){
-  $("#loc").textContent = `${CFG.name.toUpperCase()} · ${CFG.r} KM`;
+  $("#loc").textContent = `${CFG.name.toUpperCase()} · ${CFG.r} KM ▾`;
   $("#radarTitle").textContent = `RADAR · ${CFG.r} KM · NOORD BOVEN`;
 }
 
