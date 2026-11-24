@@ -193,7 +193,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 
 <div id="diag" style="display:none;position:fixed;inset:0;z-index:120;background:#050607;overflow:auto;padding:2rem;font-size:1.25rem;line-height:1.6"></div>
 <div id="photo"><div class="box" id="photoBox"></div></div>
-<div id="locMenu"><div class="box"><h2>LOCATIE</h2><div id="locBtns"></div><p>Toets 1–4 kiest meteen · Esc sluit</p></div></div>
+<div id="locMenu"><div class="box"><h2>LOCATIE</h2><div id="locBtns"></div><p>Toets 1–5 kiest meteen · Esc sluit</p></div></div>
 <div id="set">
   <form id="setForm">
     <h2>INSTELLINGEN</h2>
@@ -220,8 +220,10 @@ const PRESETS = {
   sleidinge: {name:"Sleidinge", lat:51.1247, lon:3.6658, apts:"EBOS,EBBR,EBAW"},
   tiegem:    {name:"Tiegem",    lat:50.8090, lon:3.4748, apts:"LFQQ,EBOS,EBBR"},
   gent:      {name:"Gent",      lat:51.0543, lon:3.7174, apts:"EBOS,EBBR,EBAW"},
-  melle:     {name:"Melle",     lat:51.0023, lon:3.8053, apts:"EBOS,EBBR,EBAW"}
+  melle:     {name:"Melle",     lat:51.0023, lon:3.8053, apts:"EBOS,EBBR,EBAW"},
+  ursel:     {name:"Ursel EBUL", lat:51.1442, lon:3.4756, apts:"EBOS,EBBR,EBAW", r:10}   // AIP-coördinaten, kleinere straal voor de circuit
 };
+for (const k in PRESETS) PRESETS[k].r = PRESETS[k].r || 25;
 const PAGE_LOC = "sleidinge";      // standaardlocatie van deze pagina
 const STORE_KEY = "fwtv";          // eigen opslag per pagina
 const DEFAULTS = {
@@ -765,7 +767,7 @@ $("#photo").onclick = e => { if (!e.target.closest("a")) $("#photo").classList.r
 /* ================= LOCATIE KIEZEN ================= */
 function openLoc(){
   const keys = Object.keys(PRESETS);
-  $("#locBtns").innerHTML = keys.map((k,i)=>`<button data-k="${k}" class="${CFG.loc===k?"cur":""}">${i+1}. ${esc(PRESETS[k].name)}<span>${PRESETS[k].apts.replace(/,/g," · ")}</span></button>`).join("");
+  $("#locBtns").innerHTML = keys.map((k,i)=>`<button data-k="${k}" class="${CFG.loc===k?"cur":""}">${i+1}. ${esc(PRESETS[k].name)}<span>${PRESETS[k].r} km · ${PRESETS[k].apts.replace(/,/g," · ")}</span></button>`).join("");
   $("#locBtns").querySelectorAll("button").forEach(b=>b.onclick=()=>pickLoc(b.dataset.k));
   $("#locMenu").classList.add("on");
   ($("#locBtns button.cur")||$("#locBtns button")).focus();
@@ -774,9 +776,9 @@ function closeLoc(){ $("#locMenu").classList.remove("on"); }
 function pickLoc(k){
   const p = PRESETS[k]; if (!p) return;
   let saved = {}; try{ saved = JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); }catch(e){}
-  Object.assign(saved, {loc:k, name:p.name, lat:p.lat, lon:p.lon, apts:p.apts});
+  Object.assign(saved, {loc:k, name:p.name, lat:p.lat, lon:p.lon, apts:p.apts, r:p.r});
   store(STORE_KEY, saved);
-  Object.assign(CFG, {loc:k, name:p.name, lat:p.lat, lon:p.lon, apts:p.apts});
+  Object.assign(CFG, {loc:k, name:p.name, lat:p.lat, lon:p.lon, apts:p.apts, r:p.r});
   closeLoc(); applyCfg();
   aircraft = []; lastHTML = ""; wx = {}; meteo = null;
   fetchFlights().then(renderFlights); fetchWx(); fetchMeteo();
