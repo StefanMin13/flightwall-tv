@@ -2,7 +2,8 @@
 // Gebruik in de pagina-instelling "Eigen proxy":  https://<naam>.<account>.workers.dev/?url=
 const ALLOW = [
   "api.adsb.lol", "opendata.adsb.fi", "api.airplanes.live",
-  "opensky-network.org", "api.adsbdb.com", "aviationweather.gov", "api.open-meteo.com"
+  "opensky-network.org", "api.adsbdb.com", "aviationweather.gov", "api.open-meteo.com",
+  "api.planespotters.net"
 ];
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -16,7 +17,7 @@ export default {
     let t;
     try { t = new URL(target); } catch { return new Response("bad url", { status: 400, headers: CORS }); }
     if (!ALLOW.includes(t.hostname)) return new Response("host not allowed", { status: 403, headers: CORS });
-    const ttl = t.hostname === "aviationweather.gov" ? 300 : t.hostname === "api.adsbdb.com" ? 3600 : 5;
+    const ttl = t.hostname === "aviationweather.gov" ? 300 : (t.hostname === "api.adsbdb.com" || t.hostname === "api.planespotters.net") ? 3600 : 5;
     const r = await fetch(t.toString(), {
       method: req.method,
       body: req.method === "POST" ? await req.text() : undefined,
