@@ -451,9 +451,9 @@ function drawRadar(){
   // sweep
   const ang = (Date.now()/4000)%1*Math.PI*2 - Math.PI/2;
   const g = cx.createConicGradient ? cx.createConicGradient(ang - .6, ox, oy) : null;
-  if (g){ g.addColorStop(0,"rgba(255,178,56,0)"); g.addColorStop(.095,"rgba(255,178,56,.26)"); g.addColorStop(.0955,"rgba(255,178,56,0)");
+  if (g){ g.addColorStop(0,"rgba(255,178,56,0)"); g.addColorStop(.095,"rgba(255,178,56,.17)"); g.addColorStop(.0955,"rgba(255,178,56,0)");
     cx.fillStyle=g; cx.beginPath(); cx.arc(ox,oy,R,0,7); cx.fill();
-    cx.save(); cx.strokeStyle="rgba(255,178,56,.75)"; cx.lineWidth=1.5; cx.shadowColor="rgba(255,178,56,.8)"; cx.shadowBlur=6;
+    cx.save(); cx.strokeStyle="rgba(255,178,56,.49)"; cx.lineWidth=1.5; cx.shadowColor="rgba(255,178,56,.52)"; cx.shadowBlur=4;
     cx.beginPath(); cx.moveTo(ox,oy); cx.lineTo(ox+R*Math.cos(ang),oy+R*Math.sin(ang)); cx.stroke(); cx.restore(); }
   const proj = (lat,lon) => { const k = R/range;
     return [ox + (lon-CFG.lon)*111.32*Math.cos(CFG.lat*Math.PI/180)*k, oy - (lat-CFG.lat)*110.57*k]; };
