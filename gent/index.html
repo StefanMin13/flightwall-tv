@@ -65,6 +65,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 .rt .codes{font-family:var(--led);font-weight:900;font-size:2.2rem;line-height:1.1;letter-spacing:.05em;white-space:nowrap}
 .rt .codes span{color:var(--amber);margin:0 .4rem;font-family:var(--mono);font-size:1.6rem}
 .rt .cities{font-size:.95rem;line-height:1.25;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt .codes.doubt{color:var(--faint)}
 .rt .unk{font-family:var(--led);font-size:1.6rem;color:var(--faint)}
 .mx{display:grid;grid-template-columns:repeat(4,auto);justify-content:space-between;gap:0 1.2rem}
 .mx div{display:flex;flex-direction:column}
@@ -373,7 +374,7 @@ function setMode(m, src){
 }
 
 /* ---- routes (adsbdb + adsb.lol routeset), cached ---- */
-const routeCache = recall("fwtv_routes") || {};
+const routeCache = recall("fwtv_routes2") || {};
 const pending = new Set();
 function cleanRoutes(){ const lim = Date.now()-12*3600e3; for(const k in routeCache) if(routeCache[k].ts<lim) delete routeCache[k]; }
 async function getRoute(a){
@@ -387,8 +388,8 @@ async function getRoute(a){
     const f = j?.response?.flightroute;
     if (f) r = {
       iata:f.callsign_iata||"", airline:f.airline?.name||"", aiata:f.airline?.iata||"",
-      o:{c:f.origin?.iata_code||f.origin?.icao_code, city:f.origin?.municipality||f.origin?.name||""},
-      d:{c:f.destination?.iata_code||f.destination?.icao_code, city:f.destination?.municipality||f.destination?.name||""}
+      o:{c:f.origin?.iata_code||f.origin?.icao_code, city:f.origin?.municipality||f.origin?.name||"", lat:f.origin?.latitude, lon:f.origin?.longitude},
+      d:{c:f.destination?.iata_code||f.destination?.icao_code, city:f.destination?.municipality||f.destination?.name||"", lat:f.destination?.latitude, lon:f.destination?.longitude}
     };
   }catch(e){}
   if(!r){
@@ -398,12 +399,24 @@ async function getRoute(a){
       const x = (await res.json())[0];
       if (x && x._airports && x._airports.length>=2 && x.plausible!==false){
         const o=x._airports[0], d=x._airports[x._airports.length-1];
-        r = {iata:"",airline:"",aiata:"",o:{c:o.iata||o.icao,city:o.location||o.name||""},d:{c:d.iata||d.icao,city:d.location||d.name||""}};
+        r = {iata:"",airline:"",aiata:"",o:{c:o.iata||o.icao,city:o.location||o.name||"",lat:o.lat,lon:o.lon},d:{c:d.iata||d.icao,city:d.location||d.name||"",lat:d.lat,lon:d.lon}};
       }
     }catch(e){}
   }
   routeCache[cs] = {ts:Date.now(), r};
-  pending.delete(cs); store("fwtv_routes", routeCache);
+  pending.delete(cs); store("fwtv_routes2", routeCache);
+}
+
+/* ================= ROUTECONTROLE ================= */
+// adsbdb/adsb.lol geven de route die vroeger bij deze callsign hoorde, niet het vluchtplan van vandaag.
+// Controle: vliegt het toestel ongeveer richting bestemming (en weg van de vertrekhaven)?
+function routePlausible(a, rt){
+  if (!rt || rt.d?.lat == null || rt.o?.lat == null || !a.gs || a.gs < 80) return true;     // niets om te toetsen
+  const toD = distBrg(a.lat, a.lon, +rt.d.lat, +rt.d.lon), fromO = distBrg(+rt.o.lat, +rt.o.lon, a.lat, a.lon);
+  if (toD.km < 60 || fromO.km < 60) return true;                 // bij vertrek/landing draait men nog
+  const diff = x => Math.abs(((a.trk - x) % 360 + 540) % 360 - 180);
+  const tol = toD.km > 1500 ? 35 : 50;                              // ver weg: grootcirkel = vrij strak
+  return diff(toD.brg) <= tol;
 }
 
 /* ================= RENDER FLIGHTS ================= */
@@ -447,8 +460,10 @@ function renderFlights(){
     const ph = a.vs > 300 ? "climb" : a.vs < -300 ? "desc" : "level";
     const vsTxt = Math.abs(a.vs) < 100 ? "—" : `<span class="${a.vs>0?"up":"dn"}">${a.vs>0?"▲":"▼"} ${fmt(Math.abs(a.vs))}</span>`;
     const typ = TYPES[a.type] || a.type || "";
+    const ok = routePlausible(a, e.rt);
     const route = e.rt && e.rt.o.c && e.rt.d.c
-      ? `<div class="codes">${esc(e.rt.o.c)}<span>→</span>${esc(e.rt.d.c)}</div><div class="cities">${esc(e.rt.o.city)} → ${esc(e.rt.d.city)}</div>`
+      ? (ok ? `<div class="codes">${esc(e.rt.o.c)}<span>→</span>${esc(e.rt.d.c)}</div><div class="cities">${esc(e.rt.o.city)} → ${esc(e.rt.d.city)}</div>`
+            : `<div class="codes doubt" title="De route uit de callsign-database klopt niet met de koers van het toestel">${esc(e.rt.o.c)}<span>→</span>${esc(e.rt.d.c)} ?</div><div class="cities">route onzeker · koers past niet</div>`)
       : `<div class="unk">${a.cat==="A7"?"HELIKOPTER":a.cat==="A1"||a.cat==="A2"?"VFR / GA":"ROUTE ONBEKEND"}</div><div class="cities">${esc(a.cs||"")}</div>`;
     return `<div class="fl ${ph}" data-hex="${esc(a.hex)}" data-reg="${esc(a.reg)}" data-no="${esc(e.no)}" data-air="${esc(e.airline||"")}" data-typ="${esc(TYPES[a.type]||a.type||"")}" data-route="${e.rt&&e.rt.o.c?esc(e.rt.o.c+" → "+e.rt.d.c):""}">
       ${logoHTML(e.aiata, a)}
