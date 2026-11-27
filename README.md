@@ -20,3 +20,9 @@ Aparte pagina: https://stefanmin13.github.io/flightwall-tv/gent/ (EBOS/EBBR/EBAW
 
 ## Locaties
 Klik op de locatienaam bovenaan (of toets L, of 1-5) om te kiezen uit Sleidinge, Tiegem, Gent, Melle en Ursel (EBUL, 10 km). De keuze wordt per browser bewaard. Via URL: `?loc=melle`.
+
+## OpenSky als reservebron
+1. Account op opensky-network.org → *Account* → *API Client* aanmaken → noteer `client_id` en `client_secret`.
+2. Cloudflare → je Worker → *Settings* → *Variables and Secrets* → *Add*: type **Secret**, `OPENSKY_CLIENT_ID` en `OPENSKY_CLIENT_SECRET`.
+3. Plak de nieuwste `worker.js` via *Edit code* → *Deploy*.
+4. Controle: `?diag=1` → rij OpenSky toont "OK · ingelogd".

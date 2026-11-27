@@ -918,7 +918,8 @@ async function runDiag(){
       try{
         const res = await fetchT(r==="direct"?url:r+encodeURIComponent(url), {}, 10000);
         const txt = await res.text(); JSON.parse(txt);
-        cell = `<span style="color:var(--green)">OK ${Math.round(performance.now()-t0)} ms</span>`;
+        const au = res.headers.get("X-OpenSky-Auth");
+        cell = `<span style="color:var(--green)">OK ${Math.round(performance.now()-t0)} ms${au?` · ${au==="yes"?"ingelogd":"anoniem"}`:""}</span>`;
       }catch(e){ cell = `<span style="color:var(--red)">${esc(e instanceof SyntaxError ? "geen JSON" : e.message)}</span>`; }
       html += `<td style="padding:0 1.2rem;text-align:center">${cell}</td>`;
       box.innerHTML = html + "</tr></table><p>Bezig…</p>";
