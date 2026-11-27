@@ -230,7 +230,7 @@ const STORE_KEY = "fwtv_gent";          // eigen opslag per pagina
 const DEFAULTS = {
   loc: PAGE_LOC, ...PRESETS[PAGE_LOC], r: 25, max: 5, minalt: 0, dim: "23-7",
   proxy: "https://winter-dust-31e0flightwall.stefan-e9d.workers.dev/?url=", demo: 0,
-  flightEvery: 10, wxEvery: 600
+  flightEvery: 15, wxEvery: 600
 };
 function loadCfg(){
   let c = {...DEFAULTS};
@@ -329,7 +329,7 @@ function recall(k){ try{return JSON.parse(localStorage.getItem(k));}catch(e){ret
 
 /* ================= FLIGHT DATA ================= */
 let aircraft = [];   // normalized
-let lastFetch = 0, mode = "live", failCount = 0;
+let lastFetch = 0, mode = "live", failCount = 0, everLive = false, lastLive = 0, lastErr = "";
 
 function normAdsbx(ac, now){
   return ac.filter(a => a.lat!=null && a.lon!=null && (a.seen==null || a.seen<60)).map(a => ({
@@ -350,7 +350,7 @@ async function fetchFlights(){
     try{
       const j = await getJSON(u);
       aircraft = normAdsbx(j.ac || j.aircraft || [], now);
-      failCount = 0; setMode("live", new URL(u).host.replace(/^(api|opendata)\./,""));
+      failCount = 0; everLive = true; lastLive = Date.now(); setMode("live", new URL(u).host.replace(/^(api|opendata)\./,""));
       return;
     }catch(e){}
   }
@@ -360,17 +360,23 @@ async function fetchFlights(){
     const j = await getJSON(`https://opensky-network.org/api/states/all?lamin=${CFG.lat-d}&lomin=${CFG.lon-dl}&lamax=${CFG.lat+d}&lomax=${CFG.lon+dl}`);
     aircraft = (j.states||[]).filter(s=>s[5]!=null).map(s=>({hex:s[0],cs:(s[1]||"").trim(),reg:"",type:"",cat:"",lat:s[6],lon:s[5],ground:s[8],
       alt:(s[7]??s[13]??0)*3.28084,gs:(s[9]||0)*1.94384,trk:s[10]||0,vs:(s[11]||0)*196.85,t0:now}));
-    failCount = 0; setMode("live","opensky"); return;
+    failCount = 0; everLive = true; lastLive = Date.now(); setMode("live","opensky"); return;
   }catch(e){}
   failCount++;
-  if (failCount >= 2 || !aircraft.length){ aircraft = demoAircraft(); setMode("demo"); }
-  else setMode("err");
+  lastErr = diagLog["api.adsb.lol"] || "";
+  // Nooit live gehad (bv. preview zonder netwerk): demo. Anders: laatste live data houden en rustig opnieuw proberen.
+  if (!everLive){ if (failCount >= 3){ aircraft = demoAircraft(); setMode("demo"); } else setMode("err"); return; }
+  if (Date.now() - lastLive > 180000) aircraft = [];   // na 3 min geen verse data: geen verouderde vliegtuigen tonen
+  setMode("err");
 }
 function setMode(m, src){
   mode = m;
   const dot=$("#dot"), st=$("#stat");
   dot.className = "dot" + (m==="demo"?" demo":m==="err"?" err":"");
-  st.textContent = m==="live" ? `LIVE · ${src.toUpperCase()}` : m==="demo" ? (CFG.demo ? "DEMO-MODUS" : "DEMO-DATA · geen live verbinding · ?diag=1") : "VERBINDING ONDERBROKEN";
+  const why = /429/.test(lastErr) ? "databron overbelast (429)" : lastErr.replace(/^MISLUKT: /,"") || "geen antwoord";
+  const age = lastLive ? Math.round((Date.now()-lastLive)/60000) : null;
+  st.textContent = m==="live" ? `LIVE · ${src.toUpperCase()}` : m==="demo" ? (CFG.demo ? "DEMO-MODUS" : "DEMO-DATA · geen live verbinding · ?diag=1")
+    : `VERTRAAGD · ${why}${age!=null?` · data ${age} min oud`:""} · nieuwe poging ${Math.round(nextFlightDelay()/1000)} s`;
 }
 
 /* ---- routes (adsbdb + adsb.lol routeset), cached ---- */
@@ -927,9 +933,15 @@ async function runDiag(){
 try{ const q=new URLSearchParams(location.search); if (q.has("diag")) setTimeout(runDiag, 300); if (q.has("weer")) forceIdle = true; }catch(e){}
 applyCfg(); tick(); setInterval(tick, 1000);
 cleanRoutes();
+// Bij fouten (zoals 429 = te veel aanvragen) wachten we steeds langer: 20 s, 40 s, 80 s … max 3 min.
+function nextFlightDelay(){
+  if (mode==="demo" && !everLive) return 5000;
+  if (!failCount) return CFG.flightEvery * 1000;
+  return Math.min(180, 10 * 2 ** Math.min(failCount, 5)) * 1000;
+}
 (async function loopFlights(){
   await fetchFlights(); renderFlights();
-  setTimeout(loopFlights, (mode==="demo" ? 5 : CFG.flightEvery) * 1000);
+  setTimeout(loopFlights, nextFlightDelay());
 })();
 setInterval(renderFlights, 4000);          // re-render as routes arrive
 fetchWx();
