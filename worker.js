@@ -4,10 +4,18 @@
 // OpenSky (optioneel): zet in Cloudflare onder Worker → Settings → Variables and Secrets
 // twee *secrets*: OPENSKY_CLIENT_ID en OPENSKY_CLIENT_SECRET (van opensky-network.org → Account → API Client).
 // De Worker haalt dan zelf een OAuth2-token op en stuurt het mee; de sleutels komen nooit in de webpagina.
+//
+// FlyItalyADSB (aanbevolen reserve): gratis sleutel via flyitalyadsb.com → "Free API key".
+// Zet als secret: FLYITALY_API_KEY. Data: CC BY-SA 4.0, © FlyItalyADSB (flyitalyadsb.com).
+//
+// GEDEELDE AANVRAAG: GET https://<worker>/shared
+// Haalt één keer per ~12 s alle vliegtuigen binnen 60 km van SHARED op (dekt Sleidinge, Tiegem, Gent,
+// Melle en Ursel met hun straal) en geeft dat aan elk scherm. Bron: adsb.lol → FlyItalyADSB → OpenSky.
+const SHARED = { lat: 50.98, lon: 3.64, km: 60 };
 const ALLOW = [
   "api.adsb.lol", "opendata.adsb.fi", "api.airplanes.live",
   "opensky-network.org", "api.adsbdb.com", "aviationweather.gov", "api.open-meteo.com",
-  "api.planespotters.net"
+  "api.planespotters.net", "api.flyitalyadsb.com"
 ];
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -32,9 +40,62 @@ async function openskyToken(env) {
   return osTok;
 }
 const err = (msg, status) => new Response(msg, { status, headers: CORS });
+
+// ---- gedeelde ophaling ----
+const blockedUntil = {};                       // bron → tijdstip (ms) tot wanneer we ze overslaan na 429/fout
+function block(src, r, fallbackSec) {
+  const ra = r && (+r.headers.get("Retry-After") || +r.headers.get("X-Rate-Limit-Retry-After-Seconds"));
+  blockedUntil[src] = Date.now() + 1000 * (ra > 0 ? Math.min(ra, 900) : fallbackSec);
+}
+const UA = { "User-Agent": "FlightWallTV/1.0 (personal display)", "Accept": "application/json" };
+async function srcAdsbLol() {
+  const nm = Math.ceil(SHARED.km / 1.852);
+  const r = await fetch(`https://api.adsb.lol/v2/point/${SHARED.lat}/${SHARED.lon}/${nm}`, { headers: UA, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) { block("adsb.lol", r, r.status === 429 ? 120 : 60); throw new Error("adsb.lol " + r.status); }
+  return (await r.json()).ac || [];
+}
+async function srcFlyItaly(env) {
+  if (!env.FLYITALY_API_KEY) throw new Error("flyitaly: geen sleutel");
+  const r = await fetch(`https://api.flyitalyadsb.com/v2/lat/${SHARED.lat}/lon/${SHARED.lon}/dist/${SHARED.km}`,
+    { headers: { ...UA, "X-Api-Key": env.FLYITALY_API_KEY }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) { block("flyitalyadsb", r, r.status === 429 ? 60 : 60); throw new Error("flyitaly " + r.status); }
+  return (await r.json()).ac || [];
+}
+async function srcOpenSky(env) {
+  const d = SHARED.km / 111 + 0.05, dl = d / Math.cos(SHARED.lat * Math.PI / 180);
+  const u = `https://opensky-network.org/api/states/all?lamin=${(SHARED.lat - d).toFixed(3)}&lomin=${(SHARED.lon - dl).toFixed(3)}&lamax=${(SHARED.lat + d).toFixed(3)}&lomax=${(SHARED.lon + dl).toFixed(3)}`;
+  const h = { ...UA }; try { const t = await openskyToken(env); if (t) h.Authorization = "Bearer " + t; } catch {}
+  const r = await fetch(u, { headers: h, signal: AbortSignal.timeout(9000) });
+  if (!r.ok) { block("opensky", r, r.status === 429 ? 600 : 120); throw new Error("opensky " + r.status); }
+  const j = await r.json();
+  // omzetten naar hetzelfde formaat als adsb.lol (readsb/ADSBx v2)
+  return (j.states || []).filter(s => s[5] != null && s[6] != null).map(s => ({
+    hex: s[0], flight: s[1] || "", lat: s[6], lon: s[5],
+    alt_baro: s[8] ? "ground" : Math.round((s[7] ?? s[13] ?? 0) * 3.28084),
+    gs: (s[9] || 0) * 1.94384, track: s[10] || 0, baro_rate: Math.round((s[11] || 0) * 196.85), seen: 0
+  }));
+}
+async function shared(env, ctx) {
+  const cache = caches.default, key = new Request("https://fwtv.cache/shared-v1");
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const tried = [];
+  for (const [name, fn] of [["adsb.lol", srcAdsbLol], ["flyitalyadsb", srcFlyItaly], ["opensky", srcOpenSky]]) {
+    if ((blockedUntil[name] || 0) > Date.now()) { tried.push(name + ": wacht"); continue; }
+    try {
+      const ac = await fn(env);
+      const body = JSON.stringify({ src: name, now: Date.now(), center: SHARED, tried, ac });
+      const res = new Response(body, { headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=12", "X-FWTV-Source": name } });
+      ctx.waitUntil(cache.put(key, res.clone()));
+      return res;
+    } catch (e) { tried.push(String(e.message || e)); }
+  }
+  return new Response(JSON.stringify({ error: "geen bron beschikbaar", tried }), { status: 503, headers: { ...CORS, "Content-Type": "application/json" } });
+}
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+    if (new URL(req.url).pathname === "/shared") return shared(env, ctx);
     const target = new URL(req.url).searchParams.get("url");
     let t;
     try { t = new URL(target); } catch { return err("bad url", 400); }

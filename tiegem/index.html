@@ -338,9 +338,26 @@ function normAdsbx(ac, now){
     gs:a.gs||0, trk:a.track ?? a.true_heading ?? 0, vs:a.baro_rate ?? a.geom_rate ?? 0, t0:now
   }));
 }
+// Gedeelde aanvraag via de Worker: één ophaling voor alle schermen binnen dit gebied (moet gelijk zijn aan SHARED in worker.js).
+const SHARED = {lat:50.98, lon:3.64, km:60};
+const SRC_LABEL = {"adsb.lol":"ADSB.LOL", "flyitalyadsb":"© FLYITALYADSB.COM", "opensky":"OPENSKY"};
+function workerOrigin(){ try{ const u = new URL(CFG.proxy); return /workers\.dev$/.test(u.hostname) ? u.origin : null; }catch(e){ return null; } }
+async function fetchShared(now){
+  const o = workerOrigin(); if (!o) return false;
+  if (distBrg(SHARED.lat, SHARED.lon, CFG.lat, CFG.lon).km + CFG.r > SHARED.km - 2) return false;   // buiten gedeeld gebied
+  try{
+    const r = await fetchT(o + "/shared", {}, 15000), j = await r.json();
+    if (!Array.isArray(j.ac)) return false;
+    aircraft = normAdsbx(j.ac, now);
+    failCount = 0; everLive = true; lastLive = Date.now();
+    setMode("live", (SRC_LABEL[j.src] || j.src) + " · GEDEELD");
+    return true;
+  }catch(e){ diagLog["shared"] = "MISLUKT: " + e.message; lastErr = /503/.test(e.message) ? "alle bronnen bezet" : e.message; return false; }
+}
 async function fetchFlights(){
   const nm = Math.ceil(CFG.r / KM_PER_NM) + 2, now = Date.now();
   if (CFG.demo){ aircraft = demoAircraft(); setMode("demo"); return; }
+  if (await fetchShared(now)) return;
   const sources = [
     `https://api.adsb.lol/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`,
     `https://opendata.adsb.fi/api/v2/lat/${CFG.lat}/lon/${CFG.lon}/dist/${nm}`,
@@ -350,7 +367,7 @@ async function fetchFlights(){
     try{
       const j = await getJSON(u);
       aircraft = normAdsbx(j.ac || j.aircraft || [], now);
-      failCount = 0; everLive = true; lastLive = Date.now(); setMode("live", new URL(u).host.replace(/^(api|opendata)\./,""));
+      failCount = 0; everLive = true; lastLive = Date.now(); setMode("live", new URL(u).host.replace(/^(api|opendata)\./,"").toUpperCase());
       return;
     }catch(e){}
   }
@@ -360,7 +377,7 @@ async function fetchFlights(){
     const j = await getJSON(`https://opensky-network.org/api/states/all?lamin=${CFG.lat-d}&lomin=${CFG.lon-dl}&lamax=${CFG.lat+d}&lomax=${CFG.lon+dl}`);
     aircraft = (j.states||[]).filter(s=>s[5]!=null).map(s=>({hex:s[0],cs:(s[1]||"").trim(),reg:"",type:"",cat:"",lat:s[6],lon:s[5],ground:s[8],
       alt:(s[7]??s[13]??0)*3.28084,gs:(s[9]||0)*1.94384,trk:s[10]||0,vs:(s[11]||0)*196.85,t0:now}));
-    failCount = 0; everLive = true; lastLive = Date.now(); setMode("live","opensky"); return;
+    failCount = 0; everLive = true; lastLive = Date.now(); setMode("live","OPENSKY"); return;
   }catch(e){}
   failCount++;
   lastErr = diagLog["api.adsb.lol"] || "";
@@ -375,7 +392,7 @@ function setMode(m, src){
   dot.className = "dot" + (m==="demo"?" demo":m==="err"?" err":"");
   const why = /429/.test(lastErr) ? "databron overbelast (429)" : lastErr.replace(/^MISLUKT: /,"") || "geen antwoord";
   const age = lastLive ? Math.round((Date.now()-lastLive)/60000) : null;
-  st.textContent = m==="live" ? `LIVE · ${src.toUpperCase()}` : m==="demo" ? (CFG.demo ? "DEMO-MODUS" : "DEMO-DATA · geen live verbinding · ?diag=1")
+  st.textContent = m==="live" ? `LIVE · ${src}` : m==="demo" ? (CFG.demo ? "DEMO-MODUS" : "DEMO-DATA · geen live verbinding · ?diag=1")
     : `VERTRAAGD · ${why}${age!=null?` · data ${age} min oud`:""} · nieuwe poging ${Math.round(nextFlightDelay()/1000)} s`;
 }
 
@@ -908,7 +925,12 @@ async function runDiag(){
   ];
   const routes = ["direct", ...proxyList()];
   const name = r => r==="direct" ? "direct" : new URL(r).host;
+  let sharedTxt = "geen Worker ingesteld";
+  if (workerOrigin()){ try{ const t0=performance.now(); const r = await fetchT(workerOrigin()+"/shared",{},15000); const j = await r.json();
+      sharedTxt = `<span style="color:var(--green)">OK ${Math.round(performance.now()-t0)} ms · bron ${esc(j.src)} · ${j.ac.length} toestellen binnen ${j.center?.km} km</span>${j.tried&&j.tried.length?` <span style="color:var(--dim)">(overgeslagen: ${esc(j.tried.join("; "))})</span>`:""}`;
+    }catch(e){ sharedTxt = `<span style="color:var(--red)">${esc(e.message)}</span> <span style="color:var(--dim)">(404 = oude Worker-code; 503 = geen bron beschikbaar)</span>`; } }
   let html = `<h2 style="font-family:var(--led);color:var(--amber);font-size:2.2rem">DIAGNOSE</h2>
+    <p style="margin:.6rem 0 1rem">Gedeelde aanvraag (Worker /shared): ${sharedTxt}</p>
     <p style="color:var(--dim)">Browser: ${esc(navigator.userAgent)}<br>Pagina: ${esc(location.origin)}</p>
     <table style="border-collapse:collapse;margin-top:1rem"><tr><th style="text-align:left;padding-right:2rem">Bron</th>${routes.map(r=>`<th style="padding:0 1.2rem">${esc(name(r))}</th>`).join("")}</tr>`;
   for (const [label,url] of tests){

@@ -26,3 +26,9 @@ Klik op de locatienaam bovenaan (of toets L, of 1-5) om te kiezen uit Sleidinge,
 2. Cloudflare → je Worker → *Settings* → *Variables and Secrets* → *Add*: type **Secret**, `OPENSKY_CLIENT_ID` en `OPENSKY_CLIENT_SECRET`.
 3. Plak de nieuwste `worker.js` via *Edit code* → *Deploy*.
 4. Controle: `?diag=1` → rij OpenSky toont "OK · ingelogd".
+
+## Gedeelde aanvraag + FlyItalyADSB
+De Worker heeft een endpoint `/shared`: één ophaling (cache ±12 s) van alle toestellen binnen 60 km van 50.98 N / 3.64 O, voor alle schermen samen. Bronvolgorde: adsb.lol → FlyItalyADSB → OpenSky; een bron die 429 geeft wordt tijdelijk overgeslagen.
+- FlyItalyADSB-sleutel: flyitalyadsb.com → *Free API key* → als Worker-secret `FLYITALY_API_KEY`.
+- Data FlyItalyADSB: CC BY-SA 4.0, © FlyItalyADSB (flyitalyadsb.com) — wordt in de statusregel vermeld.
+- Een locatie buiten dat gebied (via instellingen/URL) gebruikt automatisch de gewone aanvraag per locatie.
