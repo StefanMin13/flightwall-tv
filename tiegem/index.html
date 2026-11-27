@@ -929,8 +929,21 @@ async function runDiag(){
   if (workerOrigin()){ try{ const t0=performance.now(); const r = await fetchT(workerOrigin()+"/shared",{},15000); const j = await r.json();
       sharedTxt = `<span style="color:var(--green)">OK ${Math.round(performance.now()-t0)} ms · bron ${esc(j.src)} · ${j.ac.length} toestellen binnen ${j.center?.km} km</span>${j.tried&&j.tried.length?` <span style="color:var(--dim)">(overgeslagen: ${esc(j.tried.join("; "))})</span>`:""}`;
     }catch(e){ sharedTxt = `<span style="color:var(--red)">${esc(e.message)}</span> <span style="color:var(--dim)">(404 = oude Worker-code; 503 = geen bron beschikbaar)</span>`; } }
+  let srcRows = "";
+  if (workerOrigin()){
+    for (const [k,label] of [["adsb.lol","adsb.lol"],["flyitalyadsb","FlyItalyADSB (sleutel)"],["opensky","OpenSky"]]){
+      let cell;
+      try{ const r = await fetch(workerOrigin()+"/test?src="+encodeURIComponent(k)); const j = await r.json();
+        cell = j.ok ? `<span style="color:var(--green)">OK ${j.ms} ms · ${j.count} toestellen${j.auth===true?" · met sleutel":j.auth===false?" · zonder sleutel":""}</span>`
+                    : `<span style="color:var(--red)">${esc(j.error||("HTTP "+r.status))}</span>`;
+      }catch(e){ cell = `<span style="color:var(--red)">${esc(e.message)}</span> <span style="color:var(--dim)">(oude Worker-code?)</span>`; }
+      srcRows += `<tr><td style="padding-right:2rem">${esc(label)}</td><td style="padding:0 1.2rem">${cell}</td></tr>`;
+    }
+  }
   let html = `<h2 style="font-family:var(--led);color:var(--amber);font-size:2.2rem">DIAGNOSE</h2>
-    <p style="margin:.6rem 0 1rem">Gedeelde aanvraag (Worker /shared): ${sharedTxt}</p>
+    <p style="margin:.6rem 0 .4rem">Gedeelde aanvraag (Worker /shared): ${sharedTxt}</p>
+    ${srcRows?`<p style="margin:.6rem 0 .3rem;color:var(--dim)">Bronnen van de gedeelde aanvraag (rechtstreeks getest door de Worker):</p><table style="border-collapse:collapse;margin-bottom:1.2rem">${srcRows}</table>
+    <p style="color:var(--dim);margin-bottom:.3rem">Losse aanvragen per locatie (enkel reserve als de gedeelde aanvraag faalt):</p>`:""}
     <p style="color:var(--dim)">Browser: ${esc(navigator.userAgent)}<br>Pagina: ${esc(location.origin)}</p>
     <table style="border-collapse:collapse;margin-top:1rem"><tr><th style="text-align:left;padding-right:2rem">Bron</th>${routes.map(r=>`<th style="padding:0 1.2rem">${esc(name(r))}</th>`).join("")}</tr>`;
   for (const [label,url] of tests){

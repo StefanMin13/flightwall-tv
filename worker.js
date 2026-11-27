@@ -96,6 +96,17 @@ export default {
   async fetch(req, env, ctx) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     if (new URL(req.url).pathname === "/shared") return shared(env, ctx);
+    if (new URL(req.url).pathname === "/test") {             // diagnose: test één bron van de gedeelde aanvraag, zonder cache
+      const name = new URL(req.url).searchParams.get("src");
+      const fn = { "adsb.lol": srcAdsbLol, "flyitalyadsb": srcFlyItaly, "opensky": srcOpenSky }[name];
+      if (!fn) return err("onbekende bron", 400);
+      const t0 = Date.now();
+      try { const ac = await fn(env); return new Response(JSON.stringify({ src: name, ok: true, count: ac.length, ms: Date.now() - t0,
+          auth: name === "opensky" ? !!(env.OPENSKY_CLIENT_ID) : name === "flyitalyadsb" ? !!env.FLYITALY_API_KEY : null }),
+          { headers: { ...CORS, "Content-Type": "application/json" } }); }
+      catch (e) { return new Response(JSON.stringify({ src: name, ok: false, error: String(e.message || e), ms: Date.now() - t0 }),
+          { status: 502, headers: { ...CORS, "Content-Type": "application/json" } }); }
+    }
     const target = new URL(req.url).searchParams.get("url");
     let t;
     try { t = new URL(target); } catch { return err("bad url", 400); }
