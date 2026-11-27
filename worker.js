@@ -10,7 +10,7 @@
 //
 // GEDEELDE AANVRAAG: GET https://<worker>/shared
 // Haalt één keer per ~12 s alle vliegtuigen binnen 60 km van SHARED op (dekt Sleidinge, Tiegem, Gent,
-// Melle en Ursel met hun straal) en geeft dat aan elk scherm. Bron: adsb.lol → FlyItalyADSB → OpenSky.
+// Melle en Ursel met hun straal) en geeft dat aan elk scherm. Bron: adsb.lol + FlyItalyADSB samengevoegd, anders OpenSky.
 const SHARED = { lat: 50.98, lon: 3.64, km: 60 };
 const ALLOW = [
   "api.adsb.lol", "opendata.adsb.fi", "api.airplanes.live",
@@ -76,22 +76,44 @@ async function srcOpenSky(env) {
   }));
 }
 async function shared(env, ctx) {
-  const cache = caches.default, key = new Request("https://fwtv.cache/shared-v1");
+  const cache = caches.default, key = new Request("https://fwtv.cache/shared-v2");
   const hit = await cache.match(key);
   if (hit) return hit;
   const tried = [];
-  for (const [name, fn] of [["adsb.lol", srcAdsbLol], ["flyitalyadsb", srcFlyItaly], ["opensky", srcOpenSky]]) {
-    if ((blockedUntil[name] || 0) > Date.now()) { tried.push(name + ": wacht"); continue; }
-    try {
-      const ac = await fn(env);
-      const body = JSON.stringify({ src: name, now: Date.now(), center: SHARED, tried, ac });
-      const res = new Response(body, { headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=12", "X-FWTV-Source": name } });
-      ctx.waitUntil(cache.put(key, res.clone()));
-      return res;
-    } catch (e) { tried.push(String(e.message || e)); }
+  const run = async (name, fn) => {
+    if ((blockedUntil[name] || 0) > Date.now()) { tried.push(name + ": wacht"); return null; }
+    try { return await fn(env); } catch (e) { tried.push(String(e.message || e)); return null; }
+  };
+  // adsb.lol en FlyItalyADSB tegelijk; samenvoegen per toestel (FlyItaly heeft o.a. extra MLAT-posities)
+  const [a, f] = await Promise.all([run("adsb.lol", srcAdsbLol), run("flyitalyadsb", srcFlyItaly)]);
+  let ac = null; const used = [];
+  if (a || f) {
+    const has = x => x && x.lat != null && x.lon != null;
+    const by = new Map();
+    for (const [name, list] of [["adsb.lol", a], ["flyitalyadsb", f]]) {
+      if (!list) continue; used.push(name);
+      for (const x of list) {
+        const k = (x.hex || "").toLowerCase(); if (!k) continue;
+        const cur = by.get(k);
+        if (!cur) { by.set(k, { ...x, _src: name }); continue; }
+        // houd het record met positie; bij beide met positie het meest recente; vul ontbrekende velden aan
+        const better = has(x) && (!has(cur) || (x.seen_pos ?? 99) < (cur.seen_pos ?? 99));
+        by.set(k, better ? { ...cur, ...x, _src: name } : { ...x, ...cur });
+      }
+    }
+    ac = [...by.values()];
+  } else {
+    const o = await run("opensky", srcOpenSky);
+    if (o) { ac = o; used.push("opensky"); }
   }
-  return new Response(JSON.stringify({ error: "geen bron beschikbaar", tried }), { status: 503, headers: { ...CORS, "Content-Type": "application/json" } });
+  if (!ac) return new Response(JSON.stringify({ error: "geen bron beschikbaar", tried }), { status: 503, headers: { ...CORS, "Content-Type": "application/json" } });
+  const src = used.join("+");
+  const body = JSON.stringify({ src, now: Date.now(), center: SHARED, tried, ac });
+  const res = new Response(body, { headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=12", "X-FWTV-Source": src } });
+  ctx.waitUntil(cache.put(key, res.clone()));
+  return res;
 }
+
 // ---- clubtoestellen: status van een vaste lijst toestellen (ook zonder positie) ----
 // GET /club?hex=44d9b8,44a7d1,...  → FlyItalyADSB multi-lookup (telt als 1 aanvraag), anders adsb.lol per toestel.
 async function club(url, env, ctx) {

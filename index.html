@@ -361,7 +361,7 @@ async function fetchShared(now){
     if (!Array.isArray(j.ac)) return false;
     aircraft = normAdsbx(j.ac, now);
     failCount = 0; everLive = true; lastLive = Date.now();
-    setMode("live", (SRC_LABEL[j.src] || j.src) + " · GEDEELD");
+    setMode("live", String(j.src).split("+").map(x => SRC_LABEL[x] || x).join(" + ") + " · GEDEELD");
     return true;
   }catch(e){ diagLog["shared"] = "MISLUKT: " + e.message; lastErr = /503/.test(e.message) ? "alle bronnen bezet" : e.message; return false; }
 }
