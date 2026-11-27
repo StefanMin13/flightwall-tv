@@ -92,10 +92,37 @@ async function shared(env, ctx) {
   }
   return new Response(JSON.stringify({ error: "geen bron beschikbaar", tried }), { status: 503, headers: { ...CORS, "Content-Type": "application/json" } });
 }
+// ---- clubtoestellen: status van een vaste lijst toestellen (ook zonder positie) ----
+// GET /club?hex=44d9b8,44a7d1,...  → FlyItalyADSB multi-lookup (telt als 1 aanvraag), anders adsb.lol per toestel.
+async function club(url, env, ctx) {
+  const hexes = [...new Set((url.searchParams.get("hex") || "").toLowerCase().split(",").filter(h => /^[0-9a-f]{6}$/.test(h)))].sort().slice(0, 50);
+  const json = (o, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=25" } });
+  if (!hexes.length) return json({ src: null, ac: [] });
+  const cache = caches.default, key = new Request("https://fwtv.cache/club-v1/" + hexes.join(","));
+  const hit = await cache.match(key); if (hit) return hit;
+  let ac = null, src = null; const tried = [];
+  if (env.FLYITALY_API_KEY && !((blockedUntil["flyitalyadsb"] || 0) > Date.now())) {
+    try {
+      const r = await fetch(`https://api.flyitalyadsb.com/v2/icao/${hexes.join(",")}`, { headers: { ...UA, "X-Api-Key": env.FLYITALY_API_KEY }, signal: AbortSignal.timeout(8000) });
+      if (r.ok) { ac = (await r.json()).ac || []; src = "flyitalyadsb"; } else { if (r.status === 429) block("flyitalyadsb", r, 60); tried.push("flyitaly " + r.status); }
+    } catch (e) { tried.push("flyitaly " + (e.name || e)); }
+  }
+  if (!ac && !((blockedUntil["adsb.lol"] || 0) > Date.now())) {
+    const res = await Promise.all(hexes.map(h => fetch(`https://api.adsb.lol/v2/hex/${h}`, { headers: UA, signal: AbortSignal.timeout(8000) })
+      .then(r => { if (r.status === 429) block("adsb.lol", r, 120); return r.ok ? r.json() : null; }).catch(() => null)));
+    if (res.some(Boolean)) { ac = res.flatMap(j => (j && j.ac) || []); src = "adsb.lol"; } else tried.push("adsb.lol mislukt");
+  }
+  if (!ac) return json({ error: "geen bron", tried }, 503);
+  const out = json({ src, now: Date.now(), tried, ac });
+  ctx.waitUntil(cache.put(key, out.clone()));
+  return out;
+}
+
 export default {
   async fetch(req, env, ctx) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     if (new URL(req.url).pathname === "/shared") return shared(env, ctx);
+    if (new URL(req.url).pathname === "/club") return club(new URL(req.url), env, ctx);
     if (new URL(req.url).pathname === "/test") {             // diagnose: test één bron van de gedeelde aanvraag, zonder cache
       const name = new URL(req.url).searchParams.get("src");
       const fn = { "adsb.lol": srcAdsbLol, "flyitalyadsb": srcFlyItaly, "opensky": srcOpenSky }[name];

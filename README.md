@@ -32,3 +32,6 @@ De Worker heeft een endpoint `/shared`: één ophaling (cache ±12 s) van alle t
 - FlyItalyADSB-sleutel: flyitalyadsb.com → *Free API key* → als Worker-secret `FLYITALY_API_KEY`.
 - Data FlyItalyADSB: CC BY-SA 4.0, © FlyItalyADSB (flyitalyadsb.com) — wordt in de statusregel vermeld.
 - Een locatie buiten dat gebied (via instellingen/URL) gebruikt automatisch de gewone aanvraag per locatie.
+
+## Clubtoestellen (EBUL)
+Op het Ursel-scherm (of overal met `?club=1`) staat onder de radar welke clubtoestellen gehoord worden, ook zonder positie (enkel Mode S). Lijst: `CLUB` in index.html. Data via Worker `/club` (FlyItalyADSB multi-lookup, anders adsb.lol).

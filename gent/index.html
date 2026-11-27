@@ -85,6 +85,17 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
 #radarBox h3{font-size:.95rem;font-weight:400;color:var(--dim);letter-spacing:.16em;padding:.8rem 1rem 0}
 #radar{flex:1;width:100%;min-height:0}
 
+/* clubtoestellen */
+#club{display:none;border-top:1px solid var(--line);padding:.7rem 1rem .8rem;max-height:46%;overflow:hidden}
+#club.on{display:block}
+#club h4{font-size:.85rem;font-weight:700;color:#a9afb8;letter-spacing:.14em;margin-bottom:.45rem;display:flex;justify-content:space-between}
+#club h4 span{color:var(--dim);font-weight:400;letter-spacing:.04em}
+#club .row{display:grid;grid-template-columns:6.2rem 1fr auto;gap:.6rem;align-items:baseline;font-size:1.05rem;padding:.18rem 0}
+#club .row b{font-family:var(--led);font-weight:900;font-size:1.35rem;color:var(--green)}
+#club .row.nopos b{color:var(--amber)} #club .row.gnd b{color:var(--blue)}
+#club .row i{font-style:normal;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#club .row em{font-style:normal;color:var(--dim);font-size:.9rem;white-space:nowrap}
+#club .rest{margin-top:.4rem;font-size:.85rem;color:var(--faint);line-height:1.4}
 /* weather */
 #wx{display:grid;grid-template-columns:repeat(3,1fr);gap:1.2rem;min-height:0}
 .ap{background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:1rem 1.2rem;display:grid;grid-template-rows:auto auto auto 1fr;gap:.55rem;min-height:0;overflow:hidden}
@@ -187,7 +198,7 @@ main{display:grid;grid-template-columns:1fr 46vh;gap:1.6rem;min-height:0}
   </header>
   <main>
     <section id="flights"></section>
-    <section id="radarBox"><h3 id="radarTitle">RADAR</h3><canvas id="radar"></canvas></section>
+    <section id="radarBox"><h3 id="radarTitle">RADAR</h3><canvas id="radar"></canvas><div id="club"></div></section>
   </main>
   <section id="wx"></section>
 </div>
@@ -444,6 +455,55 @@ async function getAcInfo(hex){
 function catLabel(a){
   return {A7:"HELIKOPTER",A1:"VFR / GA",A2:"VFR / GA",B1:"ZWEEFVLIEGER",B4:"ULM",B6:"DRONE"}[a.cat]
     || (/^[A-Z]{2}[A-Z0-9]{3}$/.test(a.cs) && !AIRLINES[a.cs.slice(0,3)] ? "VFR / GA" : "");
+}
+
+/* ================= CLUBTOESTELLEN (EBUL) ================= */
+// Getoond op het Ursel-scherm (of overal met ?club=1). Ook toestellen zonder positie (enkel Mode S) verschijnen.
+const CLUB = ["OO-VMA","OO-VMD","OO-EBU","OO-VMC","OO-VMX","OO-VMY","OO-DAT","OO-ILS","OO-IFR","OO-VFR","OO-H11","OO-I30"];
+const CLUB_BASE = {name:"EBUL", lat:51.1442, lon:3.4756};
+const clubHex = recall("fwtv_clubhex") || {};          // reg → {hex, type, ts}
+let clubData = null, clubErr = "";
+function clubOn(){ try{ if (new URLSearchParams(location.search).has("club")) return true; }catch(e){} return CFG.loc === "ursel"; }
+async function resolveClub(){
+  const todo = CLUB.filter(reg => { const c = clubHex[reg]; return !(c && (c.hex || Date.now() - c.ts < 864e5)); });   // onbekend: 1x per dag opnieuw
+  await Promise.all(todo.map(async reg => {
+    try{ const j = await getJSON(`https://api.adsbdb.com/v0/aircraft/${reg}`); const x = j?.response?.aircraft;
+         clubHex[reg] = {hex: x?.mode_s ? x.mode_s.toLowerCase() : null, type: x ? [x.manufacturer, x.type].filter(Boolean).join(" ") : "", ts: Date.now()}; }
+    catch(e){ clubHex[reg] = {hex:null, type:"", ts:Date.now()}; }
+  }));
+  if (todo.length) store("fwtv_clubhex", clubHex);
+}
+async function fetchClub(){
+  renderClub();
+  if (!clubOn() || CFG.demo) return;
+  await resolveClub();
+  const hexes = CLUB.map(r => clubHex[r]?.hex).filter(Boolean);
+  const o = workerOrigin();
+  if (!o){ clubErr = "geen Worker ingesteld"; renderClub(); return; }
+  try{ const r = await fetchT(`${o}/club?hex=${hexes.join(",")}`, {}, 15000); clubData = await r.json(); clubData.t = Date.now(); clubErr = ""; }
+  catch(e){ clubErr = /404|400/.test(e.message) ? "Worker-code bijwerken (/club ontbreekt)" : e.message; }
+  renderClub();
+}
+function renderClub(){
+  const box = $("#club");
+  if (!clubOn()){ box.classList.remove("on"); return; }
+  box.classList.add("on");
+  const byHex = {}; (clubData?.ac || []).forEach(a => { if ((a.seen ?? 0) < 120) byHex[(a.hex||"").toLowerCase()] = a; });
+  const rows = [], rest = [];
+  for (const reg of CLUB){
+    const c = clubHex[reg] || {}, a = c.hex && byHex[c.hex];
+    if (!a){ rest.push(reg + (c.ts && !c.hex ? "?" : "")); continue; }
+    const gnd = a.alt_baro === "ground", hasPos = a.lat != null && a.lon != null && (a.seen_pos ?? 0) < 60;
+    const alt = typeof a.alt_baro === "number" ? fmt(a.alt_baro) + " ft" : "";
+    let where = "geen positie";
+    if (hasPos){ const d = distBrg(CLUB_BASE.lat, CLUB_BASE.lon, a.lat, a.lon); where = d.km < 1.5 ? "boven het veld" : `${d.km.toFixed(d.km<10?1:0)} km ${card(d.brg)}`; }
+    rows.push({gnd, hasPos, html: `<div class="row ${gnd?"gnd":hasPos?"":"nopos"}"><b>${esc(reg)}</b><i>${gnd ? "aan de grond" : [alt, a.gs?Math.round(a.gs)+" kt":""].filter(Boolean).join(" · ")}</i><em>${gnd ? "" : esc(where)}</em></div>`});
+  }
+  rows.sort((x,y) => (x.gnd - y.gnd));
+  const n = rows.filter(r => !r.gnd).length;
+  box.innerHTML = `<h4>CLUBTOESTELLEN <span>${clubErr ? esc(clubErr) : `${n} in de lucht`}</span></h4>`
+    + (rows.length ? rows.map(r => r.html).join("") : `<div class="rest" style="color:var(--dim)">Geen clubtoestellen gehoord.</div>`)
+    + (rest.length ? `<div class="rest">Niet gehoord: ${rest.map(esc).join(" · ")}</div>` : "");
 }
 
 /* ================= ROUTECONTROLE ================= */
@@ -838,7 +898,7 @@ function pickLoc(k){
   Object.assign(CFG, {loc:k, name:p.name, lat:p.lat, lon:p.lon, apts:p.apts, r:p.r});
   closeLoc(); applyCfg();
   aircraft = []; lastHTML = ""; wx = {}; meteo = null;
-  fetchFlights().then(renderFlights); fetchWx(); fetchMeteo();
+  fetchFlights().then(renderFlights); fetchWx(); fetchMeteo(); fetchClub();
 }
 $("#loc").onclick = openLoc;
 $("#loc").onkeydown = e => { if (e.key==="Enter"||e.key===" ") { e.preventDefault(); e.stopPropagation(); openLoc(); } };
@@ -1001,6 +1061,7 @@ function nextFlightDelay(){
 setInterval(renderFlights, 4000);          // re-render as routes arrive
 fetchWx();
 fetchMeteo(); setInterval(fetchMeteo, 900000);
+fetchClub(); setInterval(fetchClub, 30000);
 requestAnimationFrame(drawRadar);
 setInterval(shift, 180000);
 wake(); document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") wake(); });
