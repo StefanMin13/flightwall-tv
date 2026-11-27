@@ -430,6 +430,22 @@ async function getRoute(a){
   pending.delete(cs); store("fwtv_routes2", routeCache);
 }
 
+/* ================= TOESTELGEGEVENS (registratie/type als de bron ze niet heeft) ================= */
+const acInfo = recall("fwtv_acinfo") || {};
+const acPending = new Set();
+async function getAcInfo(hex){
+  if (!hex || hex in acInfo || acPending.has(hex) || mode==="demo") return;
+  acPending.add(hex);
+  let v = null;
+  try{ const j = await getJSON(`https://api.adsbdb.com/v0/aircraft/${hex}`); const x = j?.response?.aircraft;
+       if (x) v = {reg:x.registration||"", type:[x.manufacturer, x.type].filter(Boolean).join(" ")}; }catch(e){}
+  acInfo[hex] = v; acPending.delete(hex); store("fwtv_acinfo", acInfo);
+}
+function catLabel(a){
+  return {A7:"HELIKOPTER",A1:"VFR / GA",A2:"VFR / GA",B1:"ZWEEFVLIEGER",B4:"ULM",B6:"DRONE"}[a.cat]
+    || (/^[A-Z]{2}[A-Z0-9]{3}$/.test(a.cs) && !AIRLINES[a.cs.slice(0,3)] ? "VFR / GA" : "");
+}
+
 /* ================= ROUTECONTROLE ================= */
 // adsbdb/adsb.lol geven de route die vroeger bij deze callsign hoorde, niet het vluchtplan van vandaag.
 // Controle: vliegt het toestel ongeveer richting bestemming (en weg van de vertrekhaven)?
@@ -447,7 +463,7 @@ function enrich(a){
   const pre = a.cs.slice(0,3).toUpperCase();
   const al = AIRLINES[pre] && /^[A-Z]{3}\d/.test(a.cs) ? AIRLINES[pre] : null;
   const rt = a.route || routeCache[a.cs]?.r || null;
-  const airline = rt?.airline || al?.[0] || (a.cat==="A7"?"Helikopter":a.cat==="A1"?"Algemene luchtvaart":"");
+  const airline = rt?.airline || al?.[0] || ({A7:"Helikopter",A1:"Algemene luchtvaart",A2:"Algemene luchtvaart",B1:"Zweefvliegtuig",B4:"Ultralicht (ULM)",B6:"Drone"}[a.cat] || (/^[A-Z]{2}[A-Z0-9]{3}$/.test(a.cs) && !al ? "Algemene luchtvaart" : ""));
   const aiata = rt?.aiata || al?.[1] || "";
   let no = a.cs || a.reg || a.hex.toUpperCase();
   if (rt?.iata) no = rt.iata;
@@ -472,6 +488,7 @@ function renderFlights(){
   list = list.slice(0, CFG.max);
   shownHex = new Set(list.map(a=>a.hex));
   list.forEach(getRoute);
+  list.forEach(a => { if (!a.reg || !a.type) getAcInfo(a.hex); });
   const box = $("#flights");
   if (!total || forceIdle){
     const html = idleHTML(total, aircraft.length);
@@ -482,12 +499,14 @@ function renderFlights(){
     const e = enrich(a);
     const ph = a.vs > 300 ? "climb" : a.vs < -300 ? "desc" : "level";
     const vsTxt = Math.abs(a.vs) < 100 ? "—" : `<span class="${a.vs>0?"up":"dn"}">${a.vs>0?"▲":"▼"} ${fmt(Math.abs(a.vs))}</span>`;
-    const typ = TYPES[a.type] || a.type || "";
+    const ex = acInfo[a.hex] || {};
+    if (!a.reg && ex.reg) a.reg = ex.reg;
+    const typ = TYPES[a.type] || a.type || ex.type || "";
     const ok = routePlausible(a, e.rt);
     const route = e.rt && e.rt.o.c && e.rt.d.c
       ? (ok ? `<div class="codes">${esc(e.rt.o.c)}<span>→</span>${esc(e.rt.d.c)}</div><div class="cities">${esc(e.rt.o.city)} → ${esc(e.rt.d.city)}</div>`
             : `<div class="codes doubt" title="De route uit de callsign-database klopt niet met de koers van het toestel">${esc(e.rt.o.c)}<span>→</span>${esc(e.rt.d.c)} ?</div><div class="cities">route onzeker · koers past niet</div>`)
-      : `<div class="unk">${a.cat==="A7"?"HELIKOPTER":a.cat==="A1"||a.cat==="A2"?"VFR / GA":"ROUTE ONBEKEND"}</div><div class="cities">${esc(a.cs||"")}</div>`;
+      : `<div class="unk">${catLabel(a) || "ROUTE ONBEKEND"}</div><div class="cities">${esc(a.cs||"")}</div>`;
     return `<div class="fl ${ph}" data-hex="${esc(a.hex)}" data-reg="${esc(a.reg)}" data-no="${esc(e.no)}" data-air="${esc(e.airline||"")}" data-typ="${esc(TYPES[a.type]||a.type||"")}" data-route="${e.rt&&e.rt.o.c?esc(e.rt.o.c+" → "+e.rt.d.c):""}">
       ${logoHTML(e.aiata, a)}
       <div class="id"><div class="air">${esc(e.airline||"—")}</div><div class="no glow" title="Foto van dit toestel">${esc(e.no)}<span class="cam">📷</span></div>
